@@ -1,52 +1,70 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import Link from 'next/link'
-import { supabase } from '@/lib/supabase/client'
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { supabase } from "@/lib/supabase/client";
+
+type UsuarioTipo = "cliente" | "prestador" | "admin";
+type UsuarioRow = { tipo: UsuarioTipo | null };
 
 export default function LoginPage() {
-  const router = useRouter()
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-  })
+    email: "",
+    password: "",
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setError('')
+    e.preventDefault();
+    setLoading(true);
+    setError("");
 
     try {
-      // 1. Sign in with Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: formData.email,
-        password: formData.password,
-      })
+      // 1) Sign in with Supabase Auth
+      const { data: authData, error: authError } =
+        await supabase.auth.signInWithPassword({
+          email: formData.email,
+          password: formData.password,
+        });
 
-      if (authError) throw authError
-      if (!authData.user) throw new Error('Credenciales inválidas')
+      if (authError) throw authError;
+      if (!authData.user) throw new Error("Credenciales inválidas");
 
-      // 2. Get user profile to determine tipo
-      const { data: usuario, error: profileError } = await supabase
-        .from('usuarios')
-        .select('tipo')
-        .eq('id', authData.user.id)
-        .single()
+      // 2) Get user profile to determine tipo
+      // ✅ FIX (Opción A): casteo del builder + guard, para evitar `never`
+      const { data: usuarioData, error: profileError } = await (
+        supabase.from("usuarios") as any
+      )
+        .select("tipo")
+        .eq("id", authData.user.id)
+        .maybeSingle();
 
-      if (profileError) throw profileError
+      if (profileError) throw profileError;
 
-      // 3. Redirect to appropriate dashboard
-      router.push(usuario.tipo === 'cliente' ? '/dashboard/cliente' : '/dashboard/prestador')
+      const usuario = usuarioData as UsuarioRow | null;
+
+      // Guard: si no existe perfil o no tiene tipo, mandamos a completar registro
+      if (!usuario?.tipo) {
+        router.push("/auth/register");
+        return;
+      }
+
+      // 3) Redirect to appropriate dashboard
+      router.push(
+        usuario.tipo === "cliente"
+          ? "/dashboard/cliente"
+          : "/dashboard/prestador"
+      );
     } catch (err: any) {
-      console.error('Login error:', err)
-      setError(err.message || 'Error al iniciar sesión')
+      console.error("Login error:", err);
+      setError(err.message || "Error al iniciar sesión");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4">
@@ -65,7 +83,9 @@ export default function LoginPage() {
                 required
                 className="input"
                 value={formData.email}
-                onChange={e => setFormData({ ...formData, email: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, email: e.target.value })
+                }
               />
             </div>
 
@@ -76,7 +96,9 @@ export default function LoginPage() {
                 required
                 className="input"
                 value={formData.password}
-                onChange={e => setFormData({ ...formData, password: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, password: e.target.value })
+                }
               />
             </div>
 
@@ -86,19 +108,26 @@ export default function LoginPage() {
               </div>
             )}
 
-            <button type="submit" disabled={loading} className="btn-primary w-full">
-              {loading ? 'Ingresando...' : 'Iniciar Sesión'}
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary w-full"
+            >
+              {loading ? "Ingresando..." : "Iniciar Sesión"}
             </button>
           </form>
 
           <div className="mt-6 text-center text-sm text-gray-600">
-            ¿No tenés cuenta?{' '}
-            <Link href="/auth/register" className="text-primary-600 hover:text-primary-700 font-semibold">
+            ¿No tenés cuenta?{" "}
+            <Link
+              href="/auth/register"
+              className="text-primary-600 hover:text-primary-700 font-semibold"
+            >
               Registrate
             </Link>
           </div>
         </div>
       </div>
     </div>
-  )
+  );
 }
