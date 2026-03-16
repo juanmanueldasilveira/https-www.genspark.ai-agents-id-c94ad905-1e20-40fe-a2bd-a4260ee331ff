@@ -10,11 +10,27 @@ type TipoUsuario = 'cliente' | 'prestador'
 
 const SERVICIOS = ['pulverizacion', 'siembra', 'cosecha', 'flete']
 
+type UsuarioInsert = {
+  id: string
+  email: string
+  nombre: string
+  telefono: string | null
+  tipo: TipoUsuario
+  provincia: string
+  localidad: string
+  latitud: number
+  longitud: number
+  descripcion: string | null
+  servicios_ofrecidos: string[] | null
+  creditos_disponibles: number
+  activo: boolean
+}
+
 export default function RegisterPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const tipoParam = searchParams.get('tipo') as TipoUsuario | null
-  
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [tipo, setTipo] = useState<TipoUsuario>(tipoParam || 'cliente')
@@ -48,8 +64,8 @@ export default function RegisterPage() {
       const coords = getProvinciaCoords(formData.provincia)
       if (!coords) throw new Error('Provincia no válida')
 
-      // 3. Create usuario profile
-      const { error: profileError } = await supabase.from('usuarios').insert({
+      // 3. Create usuario profile (FIX: casteo para evitar `never`)
+      const payload: UsuarioInsert = {
         id: authData.user.id,
         email: formData.email,
         nombre: formData.nombre,
@@ -63,8 +79,9 @@ export default function RegisterPage() {
         servicios_ofrecidos: tipo === 'prestador' ? formData.servicios_ofrecidos : null,
         creditos_disponibles: 0,
         activo: true,
-      })
+      }
 
+      const { error: profileError } = await (supabase.from('usuarios') as any).insert(payload as any)
       if (profileError) throw profileError
 
       // 4. Redirect to appropriate dashboard
@@ -82,7 +99,7 @@ export default function RegisterPage() {
       ...prev,
       servicios_ofrecidos: prev.servicios_ofrecidos.includes(servicio)
         ? prev.servicios_ofrecidos.filter(s => s !== servicio)
-        : [...prev.servicios_ofrecidos, servicio]
+        : [...prev.servicios_ofrecidos, servicio],
     }))
   }
 
@@ -103,22 +120,19 @@ export default function RegisterPage() {
                 type="button"
                 onClick={() => setTipo('cliente')}
                 className={`p-4 rounded-lg border-2 transition-all ${
-                  tipo === 'cliente'
-                    ? 'border-primary-600 bg-primary-50'
-                    : 'border-gray-300 hover:border-gray-400'
+                  tipo === 'cliente' ? 'border-primary-600 bg-primary-50' : 'border-gray-300 hover:border-gray-400'
                 }`}
               >
                 <div className="text-3xl mb-2">🌾</div>
                 <div className="font-semibold">Productor</div>
                 <div className="text-sm text-gray-600">Necesito servicios</div>
               </button>
+
               <button
                 type="button"
                 onClick={() => setTipo('prestador')}
                 className={`p-4 rounded-lg border-2 transition-all ${
-                  tipo === 'prestador'
-                    ? 'border-primary-600 bg-primary-50'
-                    : 'border-gray-300 hover:border-gray-400'
+                  tipo === 'prestador' ? 'border-primary-600 bg-primary-50' : 'border-gray-300 hover:border-gray-400'
                 }`}
               >
                 <div className="text-3xl mb-2">🚜</div>
@@ -229,7 +243,7 @@ export default function RegisterPage() {
                     </label>
                   ))}
                 </div>
-                {tipo === 'prestador' && formData.servicios_ofrecidos.length === 0 && (
+                {formData.servicios_ofrecidos.length === 0 && (
                   <p className="text-sm text-red-600 mt-1">Selecciona al menos un servicio</p>
                 )}
               </div>
@@ -237,9 +251,7 @@ export default function RegisterPage() {
 
             {/* Descripción */}
             <div>
-              <label className="label">
-                {tipo === 'cliente' ? 'Sobre mi campo' : 'Sobre mi empresa'}
-              </label>
+              <label className="label">{tipo === 'cliente' ? 'Sobre mi campo' : 'Sobre mi empresa'}</label>
               <textarea
                 className="input"
                 rows={3}
@@ -254,9 +266,7 @@ export default function RegisterPage() {
             </div>
 
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-                {error}
-              </div>
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div>
             )}
 
             <button
