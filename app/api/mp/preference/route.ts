@@ -1,105 +1,189 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { MercadoPagoConfig, Preference } from 'mercadopago'
-import { createClient } from '@/lib/supabase/server'
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import MercadoPagoConfig, { Preference } from "mercadopago";
 
-const client = new MercadoPagoConfig({
-  accessToken: process.env.MP_ACCESS_TOKEN!,
-})
+// Importante: MercadoPago SDK requiere runtime Node.js (no Edge)
+export const runtime = "nodejs";
+// Evita caches inesperados en endpoints de pago
+export const dynamic = "force-dynamic";
 
-export async function POST(request: NextRequest) {
+type PackCreditos = {
+  id: string;
+  nombre: string;
+  cantidad_creditos: number;
+  precio_ars: number;
+  descuento_porcentaje: number | null;
+  popular: boolean | null;
+  activo: boolean | null;
+};
+
+type Body = {
+  // ID del pack a comprar (tabla packs_creditos)
+  packId: string;
+  // user_id del prestador (auth.users.id / profiles.id según tu esquema)
+  prestadorId: string;
+};
+
+function requireEnv(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env var: ${name}`);
+  return v;
+}
+
+export async function POST(req: Request) {
   try {
-    const supabase = await createClient()
-    
-    // Get authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
+    const SUPABASE_URL = requireEnv("NEXT_PUBLIC_SUPABASE_URL");
+    const SUPABASE_SERVICE_ROLE_KEY = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
+
+    const MERCADOPAGO_ACCESS_TOKEN = requireEnv("MERCADOPAGO_ACCESS_TOKEN");
+    const APP_BASE_URL = requireEnv("APP_BASE_URL");
+
+    // 1) Parse body
+    const body = (await req.json()) as Partial<Body>;
+    const packId = body.packId?.trim();
+    const prestadorId = body.prestadorId?.trim();
+
+    if (!packId || !prestadorId) {
+      return NextResponse.json(
+        { error: "Faltan parámetros: packId y prestadorId son requeridos." },
+        { status: 400 }
+      );
     }
 
-    // Get pack_id from request
-    const { pack_id } = await request.json()
-    if (!pack_id) {
-      return NextResponse.json({ error: 'pack_id requerido' }, { status: 400 })
+    // 2) Supabase Admin (sin tipado fuerte para evitar `never`)
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false },
+    });
+
+    // 3) Buscar pack
+    const { data: packData, error: packError } = await supabase
+      .from("packs_creditos")
+      .select("*")
+      .eq("id", packId)
+      .single();
+
+    if (packError) {
+      return NextResponse.json(
+        { error: "Error consultando el pack de créditos.", details: packError.message },
+        { status: 500 }
+      );
     }
 
-    // Get pack details
-    const { data: pack, error: packError } = await supabase
-      .from('packs_creditos')
-      .select('*')
-      .eq('id', pack_id)
-      .single()
+    // ✅ FIX (Opción A): casteo + guard para evitar `never`
+    const pack = packData as PackCreditos | null;
 
-    if (packError || !pack) {
-      return NextResponse.json({ error: 'Pack no encontrado' }, { status: 404 })
+    if (!pack) {
+      return NextResponse.json({ error: "Pack no encontrado." }, { status: 404 });
     }
 
-    // Get user details
-    const { data: usuario, error: usuarioError } = await supabase
-      .from('usuarios')
-      .select('*')
-      .eq('id', user.id)
-      .single()
-
-    if (usuarioError || !usuario) {
-      return NextResponse.json({ error: 'Usuario no encontrado' }, { status: 404 })
+    if (pack.activo === false) {
+      return NextResponse.json({ error: "El pack no está activo." }, { status: 400 });
     }
 
-    // Create preference
-    const preference = new Preference(client)
-    
-    const preferenceData = {
-      items: [
+    // 4) Crear transacción interna (estado initiated/pending)
+    // Ajustá campos si tu esquema difiere.
+    const { data: txInsert, error: txError } = await supabase
+      .from("transacciones")
+      .insert({
+        solicitud_id: null,
+        cliente_id: null,
+        prestador_id: prestadorId,
+        tipo: "compra_creditos",
+        monto_ars: Number(pack.precio_ars),
+        creditos: Number(pack.cantidad_creditos),
+        porcentaje_canon: null,
+        estado_pago: "initiated",
+        metodo_pago: "mercadopago",
+        mp_payment_id: null,
+        mp_preference_id: null,
+      })
+      .select("id")
+      .single();
+
+    if (txError) {
+      return NextResponse.json(
+        { error: "Error creando la transacción.", details: txError.message },
+        { status: 500 }
+      );
+    }
+
+    const transaccionId = txInsert?.id as string;
+
+    // 5) Crear preferencia MercadoPago Checkout Pro
+    const mpClient = new MercadoPagoConfig({
+      accessToken: MERCADOPAGO_ACCESS_TOKEN,
+    });
+
+    const preference = new Preference(mpClient);
+
+    const backUrls = {
+      success: `${APP_BASE_URL}/mp/return?status=success&tx=${transaccionId}`,
+      failure: `${APP_BASE_URL}/mp/return?status=failure&tx=${transaccionId}`,
+      pending: `${APP_BASE_URL}/mp/return?status=pending&tx=${transaccionId}`,
+    };
+
+    const notificationUrl = `${APP_BASE_URL}/api/mercadopago/webhook`;
+
+    const prefResp = await preference.create({
+      body: {
+        items: [
+          {
+            // ✅ acá era donde explotaba tu build con pack.id cuando TS lo veía como never
+            id: pack.id,
+            title: `${pack.nombre} - ${pack.cantidad_creditos} créditos`,
+            description: "Pack de créditos para AgroServicios Argentina",
+            quantity: 1,
+            unit_price: Number(pack.precio_ars),
+            currency_id: "ARS",
+          },
+        ],
+        back_urls: backUrls,
+        auto_return: "approved",
+        notification_url: notificationUrl,
+
+        // Trazabilidad: útil para reconciliar pago → transacción → prestador
+        external_reference: `credits:${transaccionId}:${prestadorId}:${pack.id}`,
+      },
+    });
+
+    const mpPreferenceId = (prefResp as any)?.id ?? null;
+    const initPoint = (prefResp as any)?.init_point ?? null;
+    const sandboxInitPoint = (prefResp as any)?.sandbox_init_point ?? null;
+
+    // 6) Guardar mp_preference_id en la transacción (best effort)
+    if (mpPreferenceId) {
+      await supabase
+        .from("transacciones")
+        .update({ mp_preference_id: mpPreferenceId })
+        .eq("id", transaccionId);
+    }
+
+    if (!initPoint && !sandboxInitPoint) {
+      return NextResponse.json(
         {
-          id: pack.id,
-          title: `${pack.nombre} - ${pack.cantidad_creditos} créditos`,
-          description: `Pack de créditos para AgroConnect Argentina`,
-          quantity: 1,
-          unit_price: pack.precio_ars,
-          currency_id: 'ARS',
+          error: "MercadoPago no devolvió init_point/sandbox_init_point.",
+          details: { mpPreferenceId },
         },
-      ],
-      payer: {
-        email: usuario.email,
-        name: usuario.nombre,
-      },
-      back_urls: {
-        success: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/prestador?payment=success`,
-        failure: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/prestador?payment=failure`,
-        pending: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/prestador?payment=pending`,
-      },
-      auto_return: 'approved' as const,
-      external_reference: `${user.id}-${pack.id}-${Date.now()}`,
-      notification_url: `${process.env.NEXT_PUBLIC_APP_URL}/api/mp/webhook`,
-      statement_descriptor: 'AGROCONNECT',
-      metadata: {
-        user_id: user.id,
-        pack_id: pack.id,
-        cantidad_creditos: pack.cantidad_creditos,
-      },
+        { status: 502 }
+      );
     }
 
-    const result = await preference.create({ body: preferenceData })
-
-    // Create pending transaction
-    await supabase.from('transacciones').insert({
-      prestador_id: user.id,
-      tipo: 'compra_creditos',
-      monto_ars: pack.precio_ars,
-      creditos: pack.cantidad_creditos,
-      estado_pago: 'pendiente',
-      metodo_pago: 'mercadopago',
-      mp_preference_id: result.id,
-    })
-
-    return NextResponse.json({
-      init_point: result.init_point,
-      preference_id: result.id,
-    })
-  } catch (error) {
-    console.error('Error creating preference:', error)
     return NextResponse.json(
-      { error: 'Error al crear la preferencia de pago' },
+      {
+        transaccionId,
+        mpPreferenceId,
+        // En TEST suele venir sandbox_init_point; en PROD init_point.
+        init_point: initPoint ?? sandboxInitPoint,
+      },
+      { status: 200 }
+    );
+  } catch (e: any) {
+    return NextResponse.json(
+      {
+        error: "Error inesperado creando preferencia.",
+        details: e?.message ?? String(e),
+      },
       { status: 500 }
-    )
+    );
   }
 }
