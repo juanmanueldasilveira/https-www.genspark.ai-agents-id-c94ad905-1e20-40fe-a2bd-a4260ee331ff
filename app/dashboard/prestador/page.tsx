@@ -51,7 +51,7 @@ type Pack = {
 }
 
 const SERVICIOS = [
-  { value: 'pulverizacion', label: 'Pulverización', icon: '🚜' },
+  { value: 'pulverizacion', label: 'Púlverización', icon: '🚜' },
   { value: 'siembra', label: 'Siembra', icon: '🌱' },
   { value: 'cosecha', label: 'Cosecha', icon: '🌾' },
   { value: 'flete', label: 'Flete', icon: '🚛' },
@@ -73,11 +73,14 @@ export default function PrestadorDashboard() {
 
   useEffect(() => {
     loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const loadData = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
       if (!user) {
         router.push('/auth/login')
         return
@@ -91,20 +94,22 @@ export default function PrestadorDashboard() {
         .single()
 
       if (usuarioError) throw usuarioError
-      if (usuarioData.tipo !== 'prestador') {
+      if ((usuarioData as any).tipo !== 'prestador') {
         router.push('/dashboard/cliente')
         return
       }
 
-      setUsuario(usuarioData)
+      setUsuario(usuarioData as any)
 
       // Load solicitudes abiertas
       const { data: solicitudesData, error: solicitudesError } = await supabase
         .from('solicitudes')
-        .select(`
+        .select(
+          `
           *,
           cliente:usuarios!solicitudes_cliente_id_fkey(nombre, telefono, email)
-        `)
+        `
+        )
         .eq('estado', 'abierta')
         .order('created_at', { ascending: false })
 
@@ -112,34 +117,36 @@ export default function PrestadorDashboard() {
 
       // Calculate distances and filter by servicios_ofrecidos
       const solicitudesConDistancia = (solicitudesData || [])
-        .filter(s => usuarioData.servicios_ofrecidos?.includes(s.tipo_servicio))
-        .map(s => ({
+        .filter((s: any) => (usuarioData as any).servicios_ofrecidos?.includes(s.tipo_servicio))
+        .map((s: any) => ({
           ...s,
           cliente: Array.isArray(s.cliente) ? s.cliente[0] : s.cliente,
           distancia: calculateDistance(
-            usuarioData.latitud,
-            usuarioData.longitud,
-            s.latitud,
-            s.longitud
+            Number((usuarioData as any).latitud),
+            Number((usuarioData as any).longitud),
+            Number(s.latitud),
+            Number(s.longitud)
           ),
         }))
-        .sort((a, b) => (a.distancia || 0) - (b.distancia || 0))
+        .sort((a: any, b: any) => (a.distancia || 0) - (b.distancia || 0))
 
       setSolicitudes(solicitudesConDistancia)
 
       // Load mis solicitudes (trabajos tomados)
       const { data: misData, error: misError } = await supabase
         .from('solicitudes')
-        .select(`
+        .select(
+          `
           *,
           cliente:usuarios!solicitudes_cliente_id_fkey(nombre, telefono, email)
-        `)
+        `
+        )
         .eq('prestador_id', user.id)
         .neq('estado', 'cancelada')
         .order('created_at', { ascending: false })
 
       if (misError) throw misError
-      setMisSolicitudes(misData || [])
+      setMisSolicitudes((misData as any) || [])
 
       // Load packs de creditos
       const { data: packsData, error: packsError } = await supabase
@@ -149,7 +156,7 @@ export default function PrestadorDashboard() {
         .order('cantidad_creditos', { ascending: true })
 
       if (packsError) throw packsError
-      setPacks(packsData || [])
+      setPacks((packsData as any) || [])
     } catch (error) {
       console.error('Error loading data:', error)
     } finally {
@@ -162,7 +169,7 @@ export default function PrestadorDashboard() {
     router.push('/')
   }
 
-  const filteredSolicitudes = solicitudes.filter(s => {
+  const filteredSolicitudes = solicitudes.filter((s) => {
     if (filters.tipo_servicio && s.tipo_servicio !== filters.tipo_servicio) return false
     if (filters.distancia_max > 0 && (s.distancia || 0) > filters.distancia_max) return false
     return true
@@ -205,7 +212,7 @@ export default function PrestadorDashboard() {
       if (creditosError) throw creditosError
 
       // 3. Registrar transacción
-      await supabase.from('transacciones').insert({
+      await (supabase.from('transacciones') as any).insert({
         solicitud_id: solicitud.id,
         prestador_id: usuario.id,
         cliente_id: solicitud.cliente_id,
@@ -225,15 +232,51 @@ export default function PrestadorDashboard() {
     }
   }
 
+  // ✅ FIX REAL: Compra con POST a /api/mp/preference y redirección a init_point
   const handleComprarPack = async (pack: Pack) => {
-    // In production, this would create a MercadoPago preference
-    // For now, we simulate the purchase
+    if (!usuario) {
+      alert('No se cargó el perfil del prestador.')
+      return
+    }
+
     if (!confirm(`¿Comprar ${pack.cantidad_creditos} créditos por $${pack.precio_ars}?`)) {
       return
     }
 
-    // Redirect to MercadoPago API route (to be implemented)
-    router.push(`/api/mp/preference?pack_id=${pack.id}`)
+    try {
+      setLoading(true)
+
+      const resp = await fetch('/api/mp/preference', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          packId: pack.id,
+          prestadorId: usuario.id,
+        }),
+      })
+
+      const data = await resp.json()
+
+      if (!resp.ok) {
+        console.error('Error /api/mp/preference:', data)
+        alert(data?.error || 'Error creando preferencia de MercadoPago.')
+        return
+      }
+
+      const initPoint = data?.init_point
+      if (!initPoint) {
+        console.error('Respuesta sin init_point:', data)
+        alert('MercadoPago no devolvió init_point.')
+        return
+      }
+
+      window.location.href = initPoint
+    } catch (e) {
+      console.error('Error comprando pack:', e)
+      alert('Error iniciando compra de créditos.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (loading) {
@@ -257,9 +300,14 @@ export default function PrestadorDashboard() {
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2 px-4 py-2 bg-primary-50 rounded-lg">
                 <Coins className="w-5 h-5 text-primary-600" />
-                <span className="font-bold text-primary-700">{usuario?.creditos_disponibles} créditos</span>
+                <span className="font-bold text-primary-700">
+                  {usuario?.creditos_disponibles} créditos
+                </span>
               </div>
-              <button onClick={handleLogout} className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+              >
                 <LogOut className="w-5 h-5" />
                 Salir
               </button>
@@ -322,14 +370,16 @@ export default function PrestadorDashboard() {
                   <select
                     className="input"
                     value={filters.tipo_servicio}
-                    onChange={e => setFilters({ ...filters, tipo_servicio: e.target.value })}
+                    onChange={(e) => setFilters({ ...filters, tipo_servicio: e.target.value })}
                   >
                     <option value="">Todos mis servicios</option>
-                    {SERVICIOS.filter(s => usuario?.servicios_ofrecidos?.includes(s.value)).map(s => (
-                      <option key={s.value} value={s.value}>
-                        {s.icon} {s.label}
-                      </option>
-                    ))}
+                    {SERVICIOS.filter((s) => usuario?.servicios_ofrecidos?.includes(s.value)).map(
+                      (s) => (
+                        <option key={s.value} value={s.value}>
+                          {s.icon} {s.label}
+                        </option>
+                      )
+                    )}
                   </select>
                 </div>
                 <div>
@@ -337,7 +387,9 @@ export default function PrestadorDashboard() {
                   <select
                     className="input"
                     value={filters.distancia_max}
-                    onChange={e => setFilters({ ...filters, distancia_max: Number(e.target.value) })}
+                    onChange={(e) =>
+                      setFilters({ ...filters, distancia_max: Number(e.target.value) })
+                    }
                   >
                     <option value={0}>Cualquier distancia</option>
                     <option value={50}>Hasta 50 km</option>
@@ -350,9 +402,9 @@ export default function PrestadorDashboard() {
 
             {/* Solicitudes disponibles */}
             <div className="space-y-4">
-              {filteredSolicitudes.map(solicitud => {
-                const servicio = SERVICIOS.find(s => s.value === solicitud.tipo_servicio)
-                
+              {filteredSolicitudes.map((solicitud) => {
+                const servicio = SERVICIOS.find((s) => s.value === solicitud.tipo_servicio)
+
                 return (
                   <div key={solicitud.id} className="card hover:shadow-md transition-shadow">
                     <div className="flex items-start justify-between mb-4">
@@ -441,10 +493,12 @@ export default function PrestadorDashboard() {
         {/* Tab: Mis Trabajos */}
         {tab === 'trabajos' && (
           <div className="space-y-4">
-            {misSolicitudes.map(solicitud => {
-              const servicio = SERVICIOS.find(s => s.value === solicitud.tipo_servicio)
-              const cliente = Array.isArray(solicitud.cliente) ? solicitud.cliente[0] : solicitud.cliente
-              
+            {misSolicitudes.map((solicitud) => {
+              const servicio = SERVICIOS.find((s) => s.value === solicitud.tipo_servicio)
+              const cliente = Array.isArray((solicitud as any).cliente)
+                ? (solicitud as any).cliente[0]
+                : (solicitud as any).cliente
+
               return (
                 <div key={solicitud.id} className="card">
                   <div className="flex items-start justify-between mb-4">
@@ -468,15 +522,21 @@ export default function PrestadorDashboard() {
                   <div className="bg-gray-50 p-4 rounded-lg mb-4">
                     <h4 className="font-semibold mb-2">Datos del Productor:</h4>
                     <div className="space-y-1 text-sm">
-                      <div><strong>Nombre:</strong> {cliente?.nombre}</div>
-                      <div><strong>Email:</strong> {cliente?.email}</div>
-                      {cliente?.telefono && <div><strong>Teléfono:</strong> {cliente.telefono}</div>}
+                      <div>
+                        <strong>Nombre:</strong> {cliente?.nombre}
+                      </div>
+                      <div>
+                        <strong>Email:</strong> {cliente?.email}
+                      </div>
+                      {cliente?.telefono && (
+                        <div>
+                          <strong>Teléfono:</strong> {cliente.telefono}
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  <button className="btn-primary w-full">
-                    Marcar como Completado
-                  </button>
+                  <button className="btn-primary w-full">Marcar como Completado</button>
                 </div>
               )
             })}
@@ -511,15 +571,18 @@ export default function PrestadorDashboard() {
 
             <h3 className="text-2xl font-bold mb-6">Packs Disponibles</h3>
             <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {packs.map(pack => {
-                const precioOriginal = pack.descuento_porcentaje > 0
-                  ? pack.precio_ars / (1 - pack.descuento_porcentaje / 100)
-                  : pack.precio_ars
+              {packs.map((pack) => {
+                const precioOriginal =
+                  pack.descuento_porcentaje > 0
+                    ? pack.precio_ars / (1 - pack.descuento_porcentaje / 100)
+                    : pack.precio_ars
 
                 return (
                   <div
                     key={pack.id}
-                    className={`card ${pack.popular ? 'ring-2 ring-primary-500' : ''} hover:shadow-lg transition-shadow`}
+                    className={`card ${
+                      pack.popular ? 'ring-2 ring-primary-500' : ''
+                    } hover:shadow-lg transition-shadow`}
                   >
                     {pack.popular && (
                       <div className="bg-primary-600 text-white text-sm font-bold px-3 py-1 rounded-full inline-block mb-3">
@@ -547,10 +610,7 @@ export default function PrestadorDashboard() {
                       ${pack.precio_ars.toLocaleString('es-AR')}
                     </div>
 
-                    <button
-                      onClick={() => handleComprarPack(pack)}
-                      className="btn-primary w-full"
-                    >
+                    <button onClick={() => handleComprarPack(pack)} className="btn-primary w-full">
                       Comprar
                     </button>
                   </div>
@@ -570,7 +630,7 @@ export default function PrestadorDashboard() {
             <div className="space-y-4 mb-6">
               <div>
                 <strong>Tipo:</strong>{' '}
-                {SERVICIOS.find(s => s.value === selectedSolicitud.tipo_servicio)?.label}
+                {SERVICIOS.find((s) => s.value === selectedSolicitud.tipo_servicio)?.label}
               </div>
               <div>
                 <strong>Descripción:</strong> {selectedSolicitud.descripcion}
@@ -590,9 +650,7 @@ export default function PrestadorDashboard() {
               <div className="flex items-start gap-2">
                 <Lock className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-semibold text-yellow-900 mb-1">
-                    Datos de Contacto Bloqueados
-                  </div>
+                  <div className="font-semibold text-yellow-900 mb-1">Datos de Contacto Bloqueados</div>
                   <p className="text-sm text-yellow-800">
                     Para ver los datos de contacto del productor, primero debés tomar el trabajo.
                     Se descontarán {selectedSolicitud.costo_creditos} créditos de tu cuenta.
@@ -602,16 +660,11 @@ export default function PrestadorDashboard() {
             </div>
 
             <div className="flex gap-3">
-              <button
-                onClick={() => setSelectedSolicitud(null)}
-                className="btn-secondary flex-1"
-              >
+              <button onClick={() => setSelectedSolicitud(null)} className="btn-secondary flex-1">
                 Cerrar
               </button>
               <button
-                onClick={() => {
-                  handleTomarTrabajo(selectedSolicitud)
-                }}
+                onClick={() => handleTomarTrabajo(selectedSolicitud)}
                 disabled={usuario!.creditos_disponibles < selectedSolicitud.costo_creditos}
                 className="btn-primary flex-1"
               >
