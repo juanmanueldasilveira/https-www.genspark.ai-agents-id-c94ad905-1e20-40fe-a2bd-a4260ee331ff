@@ -18,9 +18,7 @@ type PackCreditos = {
 };
 
 type Body = {
-  // ID del pack a comprar (tabla packs_creditos)
   packId: string;
-  // user_id del prestador (auth.users.id / profiles.id según tu esquema)
   prestadorId: string;
 };
 
@@ -69,19 +67,18 @@ export async function POST(req: Request) {
       );
     }
 
-    // ✅ FIX (Opción A): casteo + guard para evitar `never`
+    // ✅ casteo + guard
     const pack = packData as PackCreditos | null;
 
     if (!pack) {
       return NextResponse.json({ error: "Pack no encontrado." }, { status: 404 });
     }
-
     if (pack.activo === false) {
       return NextResponse.json({ error: "El pack no está activo." }, { status: 400 });
     }
 
-    // 4) Crear transacción interna (estado initiated/pending)
-    // Ajustá campos si tu esquema difiere.
+    // 4) Crear transacción interna (estado pendiente)
+    // ✅ IMPORTANTE: el schema solo permite pendiente/aprobado/rechazado
     const { data: txInsert, error: txError } = await supabase
       .from("transacciones")
       .insert({
@@ -92,7 +89,7 @@ export async function POST(req: Request) {
         monto_ars: Number(pack.precio_ars),
         creditos: Number(pack.cantidad_creditos),
         porcentaje_canon: null,
-        estado_pago: "initiated",
+        estado_pago: "pendiente",
         metodo_pago: "mercadopago",
         mp_payment_id: null,
         mp_preference_id: null,
@@ -113,7 +110,6 @@ export async function POST(req: Request) {
     const mpClient = new MercadoPagoConfig({
       accessToken: MERCADOPAGO_ACCESS_TOKEN,
     });
-
     const preference = new Preference(mpClient);
 
     const backUrls = {
@@ -122,13 +118,13 @@ export async function POST(req: Request) {
       pending: `${APP_BASE_URL}/mp/return?status=pending&tx=${transaccionId}`,
     };
 
-    const notificationUrl = `${APP_BASE_URL}/api/mercadopago/webhook`;
+    // ✅ Alinear con tu ruta real: /api/mp/webhook
+    const notificationUrl = `${APP_BASE_URL}/api/mp/webhook`;
 
     const prefResp = await preference.create({
       body: {
         items: [
           {
-            // ✅ acá era donde explotaba tu build con pack.id cuando TS lo veía como never
             id: pack.id,
             title: `${pack.nombre} - ${pack.cantidad_creditos} créditos`,
             description: "Pack de créditos para AgroServicios Argentina",
@@ -140,8 +136,6 @@ export async function POST(req: Request) {
         back_urls: backUrls,
         auto_return: "approved",
         notification_url: notificationUrl,
-
-        // Trazabilidad: útil para reconciliar pago → transacción → prestador
         external_reference: `credits:${transaccionId}:${prestadorId}:${pack.id}`,
       },
     });
@@ -172,7 +166,6 @@ export async function POST(req: Request) {
       {
         transaccionId,
         mpPreferenceId,
-        // En TEST suele venir sandbox_init_point; en PROD init_point.
         init_point: initPoint ?? sandboxInitPoint,
       },
       { status: 200 }
