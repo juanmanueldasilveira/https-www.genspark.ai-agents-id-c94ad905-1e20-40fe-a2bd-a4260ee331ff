@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { PROVINCIAS_ARGENTINA, getProvinciaCoords } from '@/lib/geo/argentina'
@@ -28,12 +28,10 @@ type UsuarioInsert = {
 
 export default function RegisterPage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const tipoParam = searchParams.get('tipo') as TipoUsuario | null
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [tipo, setTipo] = useState<TipoUsuario>(tipoParam || 'cliente')
+  const [tipo, setTipo] = useState<TipoUsuario>('cliente')
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -44,6 +42,17 @@ export default function RegisterPage() {
     descripcion: '',
     servicios_ofrecidos: [] as string[],
   })
+
+  // ✅ Reemplaza useSearchParams() por lectura client-only del querystring
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const t = params.get('tipo')
+      if (t === 'cliente' || t === 'prestador') setTipo(t)
+    } catch {
+      // ignore
+    }
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -120,7 +129,9 @@ export default function RegisterPage() {
                 type="button"
                 onClick={() => setTipo('cliente')}
                 className={`p-4 rounded-lg border-2 transition-all ${
-                  tipo === 'cliente' ? 'border-primary-600 bg-primary-50' : 'border-gray-300 hover:border-gray-400'
+                  tipo === 'cliente'
+                    ? 'border-primary-600 bg-primary-50'
+                    : 'border-gray-300 hover:border-gray-400'
                 }`}
               >
                 <div className="text-3xl mb-2">🌾</div>
@@ -132,7 +143,9 @@ export default function RegisterPage() {
                 type="button"
                 onClick={() => setTipo('prestador')}
                 className={`p-4 rounded-lg border-2 transition-all ${
-                  tipo === 'prestador' ? 'border-primary-600 bg-primary-50' : 'border-gray-300 hover:border-gray-400'
+                  tipo === 'prestador'
+                    ? 'border-primary-600 bg-primary-50'
+                    : 'border-gray-300 hover:border-gray-400'
                 }`}
               >
                 <div className="text-3xl mb-2">🚜</div>
@@ -143,7 +156,6 @@ export default function RegisterPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Email */}
             <div>
               <label className="label">Email</label>
               <input
@@ -155,7 +167,6 @@ export default function RegisterPage() {
               />
             </div>
 
-            {/* Password */}
             <div>
               <label className="label">Contraseña</label>
               <input
@@ -168,7 +179,6 @@ export default function RegisterPage() {
               />
             </div>
 
-            {/* Nombre */}
             <div>
               <label className="label">Nombre completo / Empresa</label>
               <input
@@ -180,7 +190,6 @@ export default function RegisterPage() {
               />
             </div>
 
-            {/* Telefono */}
             <div>
               <label className="label">Teléfono</label>
               <input
@@ -192,7 +201,6 @@ export default function RegisterPage() {
               />
             </div>
 
-            {/* Provincia */}
             <div>
               <label className="label">Provincia</label>
               <select
@@ -210,7 +218,6 @@ export default function RegisterPage() {
               </select>
             </div>
 
-            {/* Localidad */}
             <div>
               <label className="label">Localidad</label>
               <input
@@ -223,7 +230,6 @@ export default function RegisterPage() {
               />
             </div>
 
-            {/* Servicios ofrecidos (solo para prestadores) */}
             {tipo === 'prestador' && (
               <div>
                 <label className="label">Servicios que ofrezco (seleccionar al menos uno)</label>
@@ -249,24 +255,20 @@ export default function RegisterPage() {
               </div>
             )}
 
-            {/* Descripción */}
             <div>
               <label className="label">{tipo === 'cliente' ? 'Sobre mi campo' : 'Sobre mi empresa'}</label>
               <textarea
                 className="input"
                 rows={3}
-                placeholder={
-                  tipo === 'cliente'
-                    ? 'Breve descripción de tu campo o actividad'
-                    : 'Equipamiento, experiencia, zona de cobertura'
-                }
                 value={formData.descripcion}
                 onChange={e => setFormData({ ...formData, descripcion: e.target.value })}
               />
             </div>
 
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div>
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                {error}
+              </div>
             )}
 
             <button
