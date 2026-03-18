@@ -2,9 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import MercadoPagoConfig, { Preference } from "mercadopago";
 
-// Importante: MercadoPago SDK requiere runtime Node.js (no Edge)
 export const runtime = "nodejs";
-// Evita caches inesperados en endpoints de pago
 export const dynamic = "force-dynamic";
 
 type PackCreditos = {
@@ -28,15 +26,20 @@ function requireEnv(name: string): string {
   return v;
 }
 
+function safeBaseUrlFromRequest(req: Request) {
+  // Dominio real del deployment (Preview/Prod)
+  return new URL(req.url).origin;
+}
+
 export async function POST(req: Request) {
   try {
     const SUPABASE_URL = requireEnv("NEXT_PUBLIC_SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
-
     const MERCADOPAGO_ACCESS_TOKEN = requireEnv("MERCADOPAGO_ACCESS_TOKEN");
-    const APP_BASE_URL = requireEnv("APP_BASE_URL");
 
-    // 1) Parse body
+    // ✅ No dependemos de APP_BASE_URL para evitar mezclar Preview/Prod
+    const BASE_URL = safeBaseUrlFromRequest(req);
+
     const body = (await req.json()) as Partial<Body>;
     const packId = body.packId?.trim();
     const prestadorId = body.prestadorId?.trim();
@@ -48,12 +51,10 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2) Supabase Admin (sin tipado fuerte para evitar `never`)
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false },
     });
 
-    // 3) Buscar pack
     const { data: packData, error: packError } = await supabase
       .from("packs_creditos")
       .select("*")
@@ -67,18 +68,10 @@ export async function POST(req: Request) {
       );
     }
 
-    // ✅ casteo + guard
     const pack = packData as PackCreditos | null;
+    if (!pack) return NextResponse.json({ error: "Pack no encontrado." }, { status: 404 });
+    if (pack.activo === false) return NextResponse.json({ error: "El pack no está activo." }, { status: 400 });
 
-    if (!pack) {
-      return NextResponse.json({ error: "Pack no encontrado." }, { status: 404 });
-    }
-    if (pack.activo === false) {
-      return NextResponse.json({ error: "El pack no está activo." }, { status: 400 });
-    }
-
-    // 4) Crear transacción interna (estado pendiente)
-    // ✅ IMPORTANTE: el schema solo permite pendiente/aprobado/rechazado
     const { data: txInsert, error: txError } = await supabase
       .from("transacciones")
       .insert({
@@ -106,20 +99,16 @@ export async function POST(req: Request) {
 
     const transaccionId = txInsert?.id as string;
 
-    // 5) Crear preferencia MercadoPago Checkout Pro
-    const mpClient = new MercadoPagoConfig({
-      accessToken: MERCADOPAGO_ACCESS_TOKEN,
-    });
+    const mpClient = new MercadoPagoConfig({ accessToken: MERCADOPAGO_ACCESS_TOKEN });
     const preference = new Preference(mpClient);
 
     const backUrls = {
-      success: `${APP_BASE_URL}/mp/return?status=success&tx=${transaccionId}`,
-      failure: `${APP_BASE_URL}/mp/return?status=failure&tx=${transaccionId}`,
-      pending: `${APP_BASE_URL}/mp/return?status=pending&tx=${transaccionId}`,
+      success: `${BASE_URL}/mp/return?status=success&tx=${transaccionId}`,
+      failure: `${BASE_URL}/mp/return?status=failure&tx=${transaccionId}`,
+      pending: `${BASE_URL}/mp/return?status=pending&tx=${transaccionId}`,
     };
 
-    // ✅ Alinear con tu ruta real: /api/mp/webhook
-    const notificationUrl = `${APP_BASE_URL}/api/mp/webhook`;
+    const notificationUrl = `${BASE_URL}/api/mp/webhook`;
 
     const prefResp = await preference.create({
       body: {
@@ -144,7 +133,6 @@ export async function POST(req: Request) {
     const initPoint = (prefResp as any)?.init_point ?? null;
     const sandboxInitPoint = (prefResp as any)?.sandbox_init_point ?? null;
 
-    // 6) Guardar mp_preference_id en la transacción (best effort)
     if (mpPreferenceId) {
       await supabase
         .from("transacciones")
@@ -154,10 +142,7 @@ export async function POST(req: Request) {
 
     if (!initPoint && !sandboxInitPoint) {
       return NextResponse.json(
-        {
-          error: "MercadoPago no devolvió init_point/sandbox_init_point.",
-          details: { mpPreferenceId },
-        },
+        { error: "MercadoPago no devolvió init_point/sandbox_init_point.", details: { mpPreferenceId } },
         { status: 502 }
       );
     }
@@ -167,15 +152,13 @@ export async function POST(req: Request) {
         transaccionId,
         mpPreferenceId,
         init_point: initPoint ?? sandboxInitPoint,
+        base_url_used: BASE_URL,
       },
       { status: 200 }
     );
   } catch (e: any) {
     return NextResponse.json(
-      {
-        error: "Error inesperado creando preferencia.",
-        details: e?.message ?? String(e),
-      },
+      { error: "Error inesperado creando preferencia.", details: e?.message ?? String(e) },
       { status: 500 }
     );
   }
