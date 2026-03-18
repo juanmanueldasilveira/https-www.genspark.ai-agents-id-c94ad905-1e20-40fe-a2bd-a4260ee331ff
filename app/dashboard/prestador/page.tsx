@@ -190,16 +190,25 @@ export default function PrestadorDashboard() {
 
     setLoading(true)
     try {
-      // 1. Update solicitud
-      const { error: updateError } = await supabase
-        .from('solicitudes')
-        .update({
-          prestador_id: usuario.id,
-          estado: 'en_proceso',
-        })
-        .eq('id', solicitud.id)
+    // 1) Tomar solicitud SOLO si sigue abierta y sin prestador
+const { data: taken, error: updateError } = await supabase
+  .from('solicitudes')
+  .update({
+    prestador_id: usuario.id,
+    estado: 'en_proceso',
+  })
+  .eq('id', solicitud.id)
+  .eq('estado', 'abierta')
+  .is('prestador_id', null)
+  .select('id')
+  .single()
 
-      if (updateError) throw updateError
+if (updateError) throw updateError
+if (!taken) {
+  alert('Este trabajo ya fue tomado por otro prestador (o no está disponible).')
+  await loadData()
+  return
+}
 
       // 2. Descontar créditos
       const { error: creditosError } = await supabase
