@@ -30,7 +30,6 @@ function parseExternalReference(externalReference: string): {
   packId: string | null;
   transaccionId: string | null;
 } {
-  // credits:transaccionId:prestadorId:packId
   if (externalReference.includes(":")) {
     const parts = externalReference.split(":");
     if (parts.length >= 4 && parts[0] === "credits") {
@@ -41,13 +40,10 @@ function parseExternalReference(externalReference: string): {
       };
     }
   }
-
-  // prestadorId-packId (legacy)
   if (externalReference.includes("-")) {
     const [prestadorId, packId] = externalReference.split("-");
     return { transaccionId: null, prestadorId: prestadorId || null, packId: packId || null };
   }
-
   return { prestadorId: null, packId: null, transaccionId: null };
 }
 
@@ -68,25 +64,44 @@ export async function POST(request: NextRequest) {
       auth: { persistSession: false },
     });
 
-    const body = await request.json();
+    // 1) Parse body (puede NO ser JSON)
+    let body: any = {};
+    try {
+      body = await request.json();
+    } catch {
+      body = {};
+    }
+
+    // 2) Parse query params (MP a veces manda ?type=payment&data.id=...)
+    const sp = request.nextUrl.searchParams;
+    const type = body?.type ?? sp.get("type");
+    const action = body?.action ?? sp.get("action");
+    const liveMode = body?.live_mode ?? sp.get("live_mode");
+
+    const paymentId =
+      body?.data?.id ??
+      sp.get("data.id") ??
+      sp.get("data_id") ??
+      sp.get("id");
+
     console.log("MercadoPago webhook received:", {
-      action: body?.action,
-      type: body?.type,
-      live_mode: body?.live_mode,
-      dataId: body?.data?.id,
+      action,
+      type,
+      live_mode: liveMode,
+      dataId: paymentId,
+      hasBodyKeys: Object.keys(body || {}).length,
+      url: request.nextUrl.toString(),
     });
 
-    if (body?.type !== "payment") return NextResponse.json({ ok: true });
+    if (type !== "payment") return NextResponse.json({ ok: true });
+    if (!paymentId) return NextResponse.json({ ok: true });
 
-    const paymentId = body?.data?.id;
-    if (!paymentId) return NextResponse.json({ error: "payment_id no encontrado" }, { status: 400 });
-
+    // 3) Consultar pago con retry (en TEST puede tardar a veces)
     const mpClient = new MercadoPagoConfig({ accessToken: mpAccessToken });
     const paymentApi = new Payment(mpClient);
 
     async function getPaymentWithRetry(id: string) {
-      // Esperas un poco más para evitar el 404 “Payment not found” en TEST
-      const waits = [0, 1500, 3500, 6500]; // total ~11.5s
+      const waits = [0, 1500, 3500, 6500]; // ~11.5s total
       let lastErr: any = null;
 
       for (const w of waits) {
@@ -106,7 +121,6 @@ export async function POST(request: NextRequest) {
     try {
       paymentData = await getPaymentWithRetry(String(paymentId));
     } catch (e: any) {
-      // Si sigue 404, no rompemos (MP reintenta y/o manda otro evento)
       if (e?.status === 404) {
         console.warn("Payment still not found after retries:", String(paymentId));
         return NextResponse.json({ ok: true });
@@ -122,46 +136,23 @@ export async function POST(request: NextRequest) {
       live_mode: paymentData?.live_mode,
     });
 
-    if (paymentData?.status !== "approved") {
-      console.log("Payment not approved yet, ignoring:", {
-        id: paymentData?.id,
-        status: paymentData?.status,
-      });
-      return NextResponse.json({ ok: true });
-    }
+    if (paymentData?.status !== "approved") return NextResponse.json({ ok: true });
 
     const externalReference = paymentData?.external_reference;
-    if (!externalReference) {
-      console.error("No external_reference found in payment");
-      return NextResponse.json({ ok: true });
-    }
+    if (!externalReference) return NextResponse.json({ ok: true });
 
     const { prestadorId, packId, transaccionId } = parseExternalReference(String(externalReference));
-    if (!prestadorId || !packId) {
-      console.error("external_reference inválida:", externalReference);
-      return NextResponse.json({ ok: true });
-    }
+    if (!prestadorId || !packId) return NextResponse.json({ ok: true });
 
-    const { data: packData, error: packError } = await supabase
+    // pack
+    const { data: packData } = await supabase
       .from("packs_creditos")
       .select("*")
       .eq("id", packId)
       .maybeSingle();
 
-    if (packError) {
-      console.error("Error buscando pack:", packError);
-      return NextResponse.json({ ok: true });
-    }
-
     const pack = packData as PackCreditos | null;
-    if (!pack) {
-      console.error("Pack no encontrado:", packId);
-      return NextResponse.json({ ok: true });
-    }
-    if (pack.activo === false) {
-      console.error("Pack inactivo:", packId);
-      return NextResponse.json({ ok: true });
-    }
+    if (!pack || pack.activo === false) return NextResponse.json({ ok: true });
 
     // Idempotencia por paymentId
     const { data: existingTx } = await supabase
@@ -171,25 +162,20 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     if (existingTx?.id) {
-      console.log("Transaction already processed for mp_payment_id:", String(paymentId));
+      console.log("Already processed paymentId:", String(paymentId));
       return NextResponse.json({ ok: true });
     }
 
-    // Preferimos actualizar la tx pendiente creada en /api/mp/preference
+    // Actualizar la tx pendiente si tenemos transaccionId
     if (transaccionId) {
-      const { data: txCheck, error: txCheckError } = await supabase
+      const { data: txCheck } = await supabase
         .from("transacciones")
         .select("id, estado_pago, mp_payment_id")
         .eq("id", transaccionId)
         .maybeSingle();
 
-      if (txCheckError) {
-        console.error("Error verificando tx:", txCheckError);
-        return NextResponse.json({ ok: true });
-      }
-
       if (txCheck?.estado_pago === "aprobado" || txCheck?.mp_payment_id) {
-        console.log("Tx already approved/has mp_payment_id:", transaccionId);
+        console.log("Tx already approved:", transaccionId);
         return NextResponse.json({ ok: true });
       }
 
@@ -200,33 +186,12 @@ export async function POST(request: NextRequest) {
           metodo_pago: "mercadopago",
           mp_payment_id: String(paymentId),
           mp_preference_id: paymentData?.preference_id ? String(paymentData.preference_id) : null,
-          monto_ars: Number(pack.precio_ars),
-          creditos: Number(pack.cantidad_creditos),
-          prestador_id: prestadorId,
-          tipo: "compra_creditos",
         })
         .eq("id", transaccionId);
 
       if (txUpdateError) {
-        console.error("Error updating transaction:", txUpdateError);
+        console.error("Error updating tx:", txUpdateError);
         return NextResponse.json({ error: "Error al actualizar transacción" }, { status: 500 });
-      }
-    } else {
-      // Fallback: si no hay transaccionId, insertamos una nueva
-      const { error: insertTxError } = await (supabase.from("transacciones") as any).insert({
-        prestador_id: prestadorId,
-        tipo: "compra_creditos",
-        monto_ars: Number(pack.precio_ars),
-        creditos: Number(pack.cantidad_creditos),
-        estado_pago: "aprobado",
-        metodo_pago: "mercadopago",
-        mp_payment_id: String(paymentId),
-        mp_preference_id: paymentData?.preference_id ? String(paymentData.preference_id) : null,
-      });
-
-      if (insertTxError) {
-        console.error("Error creating transaction:", insertTxError);
-        return NextResponse.json({ error: "Error al crear transacción" }, { status: 500 });
       }
     }
 
@@ -237,13 +202,9 @@ export async function POST(request: NextRequest) {
       .eq("id", prestadorId)
       .maybeSingle();
 
-    if (usuarioError) {
-      console.error("Error buscando usuario:", usuarioError);
-      return NextResponse.json({ error: "Error al buscar usuario" }, { status: 500 });
-    }
-    if (!usuario) {
-      console.error("Usuario no encontrado:", prestadorId);
-      return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
+    if (usuarioError || !usuario) {
+      console.error("User fetch error:", usuarioError);
+      return NextResponse.json({ ok: true });
     }
 
     const currentCredits = Number((usuario as any).creditos_disponibles ?? 0);
@@ -260,7 +221,6 @@ export async function POST(request: NextRequest) {
     }
 
     console.log("Credits added OK:", { prestadorId, creditsToAdd, paymentId: String(paymentId) });
-
     return NextResponse.json({ ok: true });
   } catch (error: any) {
     console.error("Error processing webhook:", error);
