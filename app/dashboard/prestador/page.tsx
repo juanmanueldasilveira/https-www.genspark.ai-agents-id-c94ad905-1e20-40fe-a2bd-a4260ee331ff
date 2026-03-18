@@ -222,8 +222,9 @@ export default function PrestadorDashboard() {
       })
 
       alert('¡Trabajo tomado! Ahora podés ver los datos de contacto del productor.')
-      loadData()
-      setSelectedSolicitud(null)
+setSelectedSolicitud(null)
+setTab('trabajos')
+await loadData()
     } catch (error) {
       console.error('Error tomando trabajo:', error)
       alert('Error al tomar el trabajo')
