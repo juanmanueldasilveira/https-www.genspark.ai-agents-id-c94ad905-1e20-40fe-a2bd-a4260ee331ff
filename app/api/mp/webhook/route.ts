@@ -61,6 +61,8 @@ function parseExternalReference(externalReference: string): {
   return { prestadorId: null, packId: null, transaccionId: null };
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export async function POST(request: NextRequest) {
   try {
     const SUPABASE_URL = requireEnv("NEXT_PUBLIC_SUPABASE_URL");
@@ -73,7 +75,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // Supabase Admin (sin tipado fuerte => evita `never`)
+    // Supabase Admin (service role)
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false },
     });
@@ -87,17 +89,52 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    /**
+     * ✅ IMPORTANTÍSIMO (TEST):
+     * Muchas veces llega primero action=payment.created, pero el recurso aún no está disponible
+     * y Payment.get(id) devuelve 404 "Payment not found".
+     * En ese caso, devolvemos 200 y esperamos el payment.updated.
+     */
+    if (body?.action === "payment.created") {
+      return NextResponse.json({ ok: true });
+    }
+
     const paymentId = body?.data?.id;
     if (!paymentId) {
       return NextResponse.json({ error: "payment_id no encontrado" }, { status: 400 });
     }
 
-    // Obtener pago desde MP
+    // Obtener pago desde MP con retry (por consistencia eventual)
     const mpClient = new MercadoPagoConfig({ accessToken: mpAccessToken });
     const paymentApi = new Payment(mpClient);
 
-    const paymentData: any = await paymentApi.get({ id: paymentId });
-    console.log("Payment data:", paymentData);
+    async function getPaymentWithRetry(id: string) {
+      const waits = [0, 1200, 2500]; // 3 intentos, total ~3.7s
+      let lastErr: any = null;
+
+      for (const w of waits) {
+        if (w) await sleep(w);
+        try {
+          return await paymentApi.get({ id });
+        } catch (e: any) {
+          lastErr = e;
+          // Si el error es 404, reintentamos
+          if (e?.status === 404) continue;
+          throw e;
+        }
+      }
+
+      throw lastErr;
+    }
+
+    const paymentData: any = await getPaymentWithRetry(String(paymentId));
+    console.log("Payment data:", {
+      id: paymentData?.id,
+      status: paymentData?.status,
+      external_reference: paymentData?.external_reference,
+      preference_id: paymentData?.preference_id,
+      live_mode: paymentData?.live_mode,
+    });
 
     // Procesar solo aprobados
     if (paymentData?.status !== "approved") {
@@ -110,7 +147,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    const { prestadorId, packId } = parseExternalReference(String(externalReference));
+    const { prestadorId, packId, transaccionId } = parseExternalReference(
+      String(externalReference)
+    );
+
     if (!prestadorId || !packId) {
       console.error("external_reference inválida:", externalReference);
       return NextResponse.json({ ok: true });
@@ -139,7 +179,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // Idempotencia: si ya existe transacción con este payment_id, no reprocesar
+    // ✅ Idempotencia por mp_payment_id (si MP reintenta)
     const { data: existingTx, error: existingTxError } = await supabase
       .from("transacciones")
       .select("id")
@@ -148,7 +188,6 @@ export async function POST(request: NextRequest) {
 
     if (existingTxError) {
       console.error("Error verificando transacción existente:", existingTxError);
-      // igual respondemos ok para no provocar reintentos excesivos
       return NextResponse.json({ ok: true });
     }
 
@@ -157,28 +196,64 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // Crear/actualizar transacción (FIX: sin tipos strict; compila en Vercel)
-    const txPayload = {
-      prestador_id: prestadorId,
-      tipo: "compra_creditos",
-      monto_ars: Number(pack.precio_ars),
-      creditos: Number(pack.cantidad_creditos),
-      estado_pago: "aprobado",
-      metodo_pago: "mercadopago",
-      mp_payment_id: String(paymentId),
-      // opcional (si lo querés guardar)
-      mp_preference_id: paymentData?.preference_id ? String(paymentData.preference_id) : null,
-    };
+    // ✅ Si tenemos transaccionId, actualizamos esa transacción pendiente (mejor que crear otra)
+    if (transaccionId) {
+      // Si ya estaba aprobada, evitamos doble acreditación
+      const { data: txCheck, error: txCheckError } = await supabase
+        .from("transacciones")
+        .select("id, estado_pago, mp_payment_id")
+        .eq("id", transaccionId)
+        .maybeSingle();
 
-    const { data: transaction, error: transactionError } = await (supabase
-      .from("transacciones") as any)
-      .upsert(txPayload as any, { onConflict: "mp_payment_id" })
-      .select("id")
-      .single();
+      if (txCheckError) {
+        console.error("Error verificando transacción por transaccionId:", txCheckError);
+        return NextResponse.json({ ok: true });
+      }
 
-    if (transactionError) {
-      console.error("Error creating transaction:", transactionError);
-      return NextResponse.json({ error: "Error al crear transacción" }, { status: 500 });
+      if (txCheck?.estado_pago === "aprobado" || txCheck?.mp_payment_id) {
+        console.log("Tx already approved/has mp_payment_id:", transaccionId);
+        return NextResponse.json({ ok: true });
+      }
+
+      const { error: txUpdateError } = await supabase
+        .from("transacciones")
+        .update({
+          estado_pago: "aprobado",
+          metodo_pago: "mercadopago",
+          mp_payment_id: String(paymentId),
+          mp_preference_id: paymentData?.preference_id ? String(paymentData.preference_id) : null,
+          monto_ars: Number(pack.precio_ars),
+          creditos: Number(pack.cantidad_creditos),
+          prestador_id: prestadorId,
+          tipo: "compra_creditos",
+        })
+        .eq("id", transaccionId);
+
+      if (txUpdateError) {
+        console.error("Error updating transaction:", txUpdateError);
+        return NextResponse.json({ error: "Error al actualizar transacción" }, { status: 500 });
+      }
+    } else {
+      // Fallback: crear/actualizar por mp_payment_id (requiere índice UNIQUE si querés upsert real)
+      const txPayload = {
+        prestador_id: prestadorId,
+        tipo: "compra_creditos",
+        monto_ars: Number(pack.precio_ars),
+        creditos: Number(pack.cantidad_creditos),
+        estado_pago: "aprobado",
+        metodo_pago: "mercadopago",
+        mp_payment_id: String(paymentId),
+        mp_preference_id: paymentData?.preference_id ? String(paymentData.preference_id) : null,
+      };
+
+      const { error: transactionError } = await (supabase
+        .from("transacciones") as any)
+        .insert(txPayload as any);
+
+      if (transactionError) {
+        console.error("Error creating transaction:", transactionError);
+        return NextResponse.json({ error: "Error al crear transacción" }, { status: 500 });
+      }
     }
 
     // Sumar créditos al usuario
@@ -211,12 +286,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Error al actualizar créditos" }, { status: 500 });
     }
 
-    console.log(`Credits added: ${creditsToAdd} to user ${prestadorId}. Tx: ${transaction?.id}`);
+    console.log(`Credits added: ${creditsToAdd} to user ${prestadorId}. Payment: ${paymentId}`);
 
     return NextResponse.json({ ok: true });
   } catch (error: any) {
     console.error("Error processing webhook:", error);
-    // Importante: responder algo (ideal 200) para evitar reintentos infinitos si el error es de config.
     return NextResponse.json({ error: "Error al procesar webhook" }, { status: 500 });
   }
 }
