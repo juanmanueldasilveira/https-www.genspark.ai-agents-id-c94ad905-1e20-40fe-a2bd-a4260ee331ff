@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { calculateDistance } from '@/lib/geo/argentina'
-import { LogOut, Search, Lock, MapPin, Coins, User } from 'lucide-react'
+import { LogOut, Search, Lock, MapPin, Coins, User, MessageCircle } from 'lucide-react'
 
 type Usuario = {
   id: string
