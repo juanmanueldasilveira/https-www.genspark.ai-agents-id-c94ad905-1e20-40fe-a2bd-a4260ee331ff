@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 type Oportunidad = {
   id: string;
@@ -75,7 +75,23 @@ function formatDateShort(value?: string | null) {
 
 export default function Home() {
   const router = useRouter();
-  const supabase = useMemo(() => createClientComponentClient(), []);
+
+  // ✅ Opción B: Supabase desde @supabase/supabase-js usando env vars públicas
+  const supabase = useMemo<SupabaseClient | null>(() => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    // Evita crash si faltan envs (la Home igual puede renderizar)
+    if (!url || !key) return null;
+
+    return createClient(url, key, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    });
+  }, []);
 
   const [sessionReady, setSessionReady] = useState(false);
   const [isLogged, setIsLogged] = useState(false);
@@ -95,18 +111,38 @@ export default function Home() {
   const [errFx, setErrFx] = useState<string | null>(null);
   const [errNews, setErrNews] = useState<string | null>(null);
 
+  // Sesión (sin auth-helpers)
   useEffect(() => {
     let mounted = true;
 
     (async () => {
       try {
+        if (!supabase) {
+          if (mounted) {
+            setIsLogged(false);
+            setSessionReady(true);
+          }
+          return;
+        }
+
         const { data } = await supabase.auth.getSession();
         if (!mounted) return;
+
         setIsLogged(!!data.session);
+        setSessionReady(true);
+
+        // Escuchar cambios de auth (login/logout) y reflejar UI
+        const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+          setIsLogged(!!session);
+        });
+
+        return () => {
+          sub?.subscription?.unsubscribe();
+        };
       } catch {
-        // Si falla, la Home igual funciona.
-      } finally {
-        if (mounted) setSessionReady(true);
+        if (!mounted) return;
+        setIsLogged(false);
+        setSessionReady(true);
       }
     })();
 
@@ -127,7 +163,7 @@ export default function Home() {
         const json = await res.json();
         if (!mounted) return;
         setOpp(Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : []);
-      } catch (e: any) {
+      } catch {
         if (!mounted) return;
         setErrOpp('No se pudieron cargar oportunidades.');
       } finally {
@@ -152,7 +188,7 @@ export default function Home() {
         const json = await res.json();
         if (!mounted) return;
         setRosario(json);
-      } catch (e: any) {
+      } catch {
         if (!mounted) return;
         setErrRosario('No se pudieron cargar cotizaciones Rosario.');
       } finally {
@@ -177,7 +213,7 @@ export default function Home() {
         const json = await res.json();
         if (!mounted) return;
         setFx(Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : []);
-      } catch (e: any) {
+      } catch {
         if (!mounted) return;
         setErrFx('No se pudieron cargar divisas.');
       } finally {
@@ -202,7 +238,7 @@ export default function Home() {
         const json = await res.json();
         if (!mounted) return;
         setNews(Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : []);
-      } catch (e: any) {
+      } catch {
         if (!mounted) return;
         setErrNews('No se pudieron cargar noticias.');
       } finally {
@@ -216,10 +252,9 @@ export default function Home() {
   }, []);
 
   const fxTicker = useMemo(() => {
-    if (!fx?.length) return 'Divisas: cargando…';
-    // Ejemplo: "USD Oficial 1020/1040 • USD Blue 1200/1230 • ..."
+    if (!fx?.length) return 'USD Oficial —/—  •  USD Blue —/—  •  USD MEP —/—  •  EUR —/—';
     return fx
-      .slice(0, 10)
+      .slice(0, 12)
       .map((d) => {
         const compra = d.compra == null ? '—' : d.compra.toLocaleString('es-AR');
         const venta = d.venta == null ? '—' : d.venta.toLocaleString('es-AR');
@@ -229,12 +264,10 @@ export default function Home() {
   }, [fx]);
 
   const handleVerTomar = (o: Oportunidad) => {
-    // Mantiene el “paso a paso”: si no hay sesión, login.
     if (!isLogged) {
       router.push('/auth/login?redirect=/');
       return;
     }
-    // Si está logueado, lo mandamos al dashboard (podés cambiar a /oportunidades/[id] cuando exista)
     router.push('/dashboard/prestador');
   };
 
@@ -249,17 +282,16 @@ export default function Home() {
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,rgba(34,197,94,0.16),transparent_55%)]" />
 
       {/* Top FX ticker (single, loop, more transparent) */}
-      <div className="sticky top-0 z-50 border-b border-white/10 bg-black/20 backdrop-blur-xl">
+      <div className="sticky top-0 z-50 border-b border-white/10 bg-black/15 backdrop-blur-2xl">
         <div className="mx-auto max-w-7xl px-4">
           <div className="flex h-9 items-center overflow-hidden">
-            <div className="mr-3 hidden shrink-0 items-center gap-2 text-[11px] text-white/80 sm:flex">
+            <div className="mr-3 hidden shrink-0 items-center gap-2 text-[11px] text-white/75 sm:flex">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400/90" />
               <span className="uppercase tracking-wider">Divisas</span>
             </div>
 
             <div className="relative w-full overflow-hidden">
               <div className="ticker-mask">
-                {/* Duplicamos el contenido para loop continuo */}
                 <div className="ticker-track">
                   <span className="ticker-item">{fxTicker}</span>
                   <span className="ticker-sep">•</span>
@@ -270,7 +302,7 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="ml-3 hidden shrink-0 text-[11px] text-white/60 sm:block">
+            <div className="ml-3 hidden shrink-0 text-[11px] text-white/55 sm:block">
               {loadingFx ? 'Actualizando…' : errFx ? 'Sin datos' : 'Loop'}
             </div>
           </div>
@@ -279,7 +311,7 @@ export default function Home() {
 
       {/* Header */}
       <header className="mx-auto max-w-7xl px-4 pt-8">
-        <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-2xl md:flex-row md:items-center md:justify-between">
           <div>
             <div className="flex items-baseline gap-3">
               <h1 className="text-2xl font-semibold tracking-tight">AgroConnect</h1>
@@ -290,6 +322,11 @@ export default function Home() {
             <p className="mt-1 text-sm text-white/70">
               Oportunidades al centro. Mercados y contexto al costado. Accedé a detalles registrándote.
             </p>
+            {!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? (
+              <p className="mt-2 text-[11px] text-amber-200/90">
+                Falta configurar NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY (la Home igual carga datos públicos).
+              </p>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -299,7 +336,7 @@ export default function Home() {
               <a className="hover:text-white" href="#noticias">Noticias</a>
             </nav>
 
-            <div className="h-6 w-px bg-white/10 hidden md:block" />
+            <div className="hidden h-6 w-px bg-white/10 md:block" />
 
             {sessionReady && !isLogged ? (
               <>
@@ -331,10 +368,10 @@ export default function Home() {
       {/* Body 3 columns */}
       <main className="mx-auto max-w-7xl px-4 pb-16 pt-8">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          {/* Left sidebar (glass - more transparency) */}
+          {/* Left sidebar (more transparent glass) */}
           <aside id="mercados" className="lg:col-span-3">
             <div className="space-y-6">
-              <div className="rounded-2xl border border-white/10 bg-white/7 p-4 backdrop-blur-2xl">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-2xl">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-semibold text-white/90">Mercado de Granos</h2>
                   <span className="text-[11px] text-white/60">Rosario</span>
@@ -388,7 +425,7 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-white/7 p-4 backdrop-blur-2xl">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-2xl">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-white/90">Chicago (CME)</h3>
                   <span className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[11px] text-white/65">
@@ -406,16 +443,14 @@ export default function Home() {
                 >
                   Ver en CME
                 </a>
-                <div className="mt-2 text-[11px] text-white/55">
-                  Fuente: CME Delayed Quotes
-                </div>
+                <div className="mt-2 text-[11px] text-white/55">Fuente: CME Delayed Quotes</div>
               </div>
             </div>
           </aside>
 
-          {/* Center column (focus) */}
+          {/* Center column */}
           <section id="oportunidades" className="lg:col-span-6">
-            <div className="rounded-2xl border border-white/10 bg-white/6 p-4 backdrop-blur-xl">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-2xl">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <h2 className="text-lg font-semibold tracking-tight">Oportunidades</h2>
@@ -451,7 +486,7 @@ export default function Home() {
                   opp.slice(0, 20).map((o) => (
                     <div
                       key={o.id}
-                      className="group rounded-2xl border border-white/10 bg-white/7 p-4 backdrop-blur-2xl transition hover:bg-white/10"
+                      className="group rounded-2xl border border-white/10 bg-white/6 p-4 backdrop-blur-2xl transition hover:bg-white/10"
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
@@ -493,9 +528,7 @@ export default function Home() {
                           </div>
 
                           {o.descripcion ? (
-                            <p className="mt-2 text-sm text-white/70">
-                              {truncate160(o.descripcion)}
-                            </p>
+                            <p className="mt-2 text-sm text-white/70">{truncate160(o.descripcion)}</p>
                           ) : null}
                         </div>
 
@@ -521,9 +554,9 @@ export default function Home() {
             </div>
           </section>
 
-          {/* Right sidebar (glass - more transparency) */}
+          {/* Right sidebar */}
           <aside id="noticias" className="lg:col-span-3">
-            <div className="rounded-2xl border border-white/10 bg-white/7 p-4 backdrop-blur-2xl">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-2xl">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-white/90">Noticias Agro</h2>
                 <span className="text-[11px] text-white/60">Resumen</span>
@@ -560,9 +593,7 @@ export default function Home() {
                 )}
               </div>
 
-              <div className="mt-3 text-[11px] text-white/55">
-                Fuente: RSS (según endpoint público)
-              </div>
+              <div className="mt-3 text-[11px] text-white/55">Fuente: RSS (según endpoint público)</div>
             </div>
           </aside>
         </div>
@@ -570,7 +601,6 @@ export default function Home() {
 
       {/* Global styles for ticker loop */}
       <style jsx global>{`
-        /* Mask to soften edges */
         .ticker-mask {
           mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
           -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
@@ -582,16 +612,16 @@ export default function Home() {
           white-space: nowrap;
           will-change: transform;
           animation: marquee 22s linear infinite;
-          color: rgba(255, 255, 255, 0.85);
+          color: rgba(255, 255, 255, 0.88);
           font-size: 12px;
         }
 
         .ticker-item {
-          opacity: 0.92;
+          opacity: 0.95;
         }
 
         .ticker-sep {
-          opacity: 0.4;
+          opacity: 0.35;
         }
 
         @keyframes marquee {
@@ -608,9 +638,6 @@ export default function Home() {
             animation: none;
           }
         }
-
-        /* Tailwind doesn't include bg-white/7 by default; works because it's arbitrary via JIT
-           If your setup doesn't allow it, change bg-white/7 -> bg-white/10 everywhere. */
       `}</style>
     </div>
   );
