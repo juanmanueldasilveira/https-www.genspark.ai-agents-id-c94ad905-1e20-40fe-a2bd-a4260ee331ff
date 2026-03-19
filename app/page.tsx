@@ -47,15 +47,11 @@ type NoticiasItem = {
 }
 
 const SERVICIOS = [
-  { value: 'pulverizacion', label: 'Pulverización', icon: '🚜', tint: 'from-emerald-500/20 to-emerald-500/0' },
-  { value: 'siembra', label: 'Siembra', icon: '🌱', tint: 'from-lime-500/20 to-lime-500/0' },
-  { value: 'cosecha', label: 'Cosecha', icon: '🌾', tint: 'from-amber-500/20 to-amber-500/0' },
-  { value: 'flete', label: 'Flete', icon: '🚛', tint: 'from-sky-500/20 to-sky-500/0' },
+  { value: 'pulverizacion', label: 'Pulverización', icon: '🚜' },
+  { value: 'siembra', label: 'Siembra', icon: '🌱' },
+  { value: 'cosecha', label: 'Cosecha', icon: '🌾' },
+  { value: 'flete', label: 'Flete', icon: '🚛' },
 ] as const
-
-// Imagen CC (Wikimedia Commons) [Source](https://commons.wikimedia.org/wiki/File:Sunset-over-the-wheat-field-featured.jpg)
-const HERO_IMAGE =
-  'https://sspark.genspark.ai/cfimages?u1=tyn18CSWm20azmHCeA3cMJxEqWTiA6X57SHN6NjTomKijIOvxzZP4zVbje%2FUQeoDZ%2FNjWVO0N1c4z8yacwX3PP%2BNGIIrA71DJZqHTe6Qp1%2B7PBWCwAjP3CaEEdaI3FfWt2ERVMj%2BITbQm4KV&u2=%2BKTiQln0PG%2B%2BLnUq&width=2560'
 
 function truncate(s: string, max = 160) {
   const t = (s || '').trim()
@@ -76,12 +72,9 @@ function formatUsd(n: number | null) {
   )
 }
 
-function pill(label: string) {
-  return (
-    <span className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-xs font-medium text-white">
-      {label}
-    </span>
-  )
+function formatNum(n: number | null) {
+  if (n === null || Number.isNaN(n)) return '—'
+  return n.toLocaleString('es-AR', { maximumFractionDigits: 2 })
 }
 
 export default function HomePage() {
@@ -153,6 +146,24 @@ export default function HomePage() {
     }))
   }, [oportunidades])
 
+  const fxTickerText = useMemo(() => {
+    if (loadingFx) return 'Cargando divisas…'
+    if (!fx?.length) return 'No se pudieron cargar divisas.'
+    // mostramos venta principalmente
+    return fx
+      .map((d) => `${d.nombre}: ${formatNum(d.venta)}`)
+      .join('   •   ')
+  }, [fx, loadingFx])
+
+  const newsTickerText = useMemo(() => {
+    if (loadingNews) return 'Cargando noticias…'
+    if (!news?.length) return 'No se pudieron cargar noticias.'
+    return news
+      .slice(0, 10)
+      .map((n) => truncate(n.title, 80))
+      .join('   •   ')
+  }, [news, loadingNews])
+
   const goRegister = (tipo: 'cliente' | 'prestador') => {
     router.push(`/auth/register?tipo=${tipo}`)
   }
@@ -162,7 +173,7 @@ export default function HomePage() {
   }
 
   const onVerOTomar = (o: Oportunidad) => {
-    // MVP: enviamos al flujo autenticado (prestador) y el resto lo haces desde el dashboard
+    // MVP: enviamos al flujo autenticado (prestador)
     const redirect = `/dashboard/prestador`
     if (!authReady || !isLogged) {
       goLogin(redirect)
@@ -174,382 +185,381 @@ export default function HomePage() {
   const oppCount = oportunidades.length
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
-      {/* HERO */}
-      <div className="relative overflow-hidden">
-        {/* Background image */}
-        <div className="absolute inset-0">
-          <img
-            src={HERO_IMAGE}
-            alt="Campo al atardecer"
-            className="h-full w-full object-cover opacity-35"
-          />
-          {/* overlays */}
-          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/40 via-slate-950/70 to-slate-950" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.22),transparent_55%)]" />
-        </div>
-
-        {/* Top nav */}
-        <div className="relative z-10">
-          <div className="mx-auto max-w-6xl px-4 py-5 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-2xl bg-emerald-500/15 border border-white/10 grid place-items-center">
-                <span className="text-xl">🌾</span>
-              </div>
-              <div>
-                <div className="font-bold tracking-tight text-lg">AgroConnect</div>
-                <div className="text-xs text-white/70">Portal público</div>
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      {/* TICKERS (franja fina superior) */}
+      <div className="border-b bg-white">
+        <div className="mx-auto max-w-7xl px-4 py-2">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 items-center">
+            {/* FX ticker */}
+            <div className="ticker-wrap">
+              <div className="ticker-label">Divisas</div>
+              <div className="ticker-viewport">
+                <div className="ticker-move">
+                  <span className="ticker-item">{fxTickerText}</span>
+                  <span className="ticker-sep">   •   </span>
+                  <span className="ticker-item">{fxTickerText}</span>
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              {isLogged ? (
-                <>
-                  <button
-                    onClick={() => router.push('/dashboard/cliente')}
-                    className="hidden sm:inline-flex rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-medium hover:bg-white/10 transition"
-                  >
-                    Panel Productor
-                  </button>
-                  <button
-                    onClick={() => router.push('/dashboard/prestador')}
-                    className="rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 transition"
-                  >
-                    Ir al Panel
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    onClick={() => goLogin('/')}
-                    className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-medium hover:bg-white/10 transition"
-                  >
-                    Ingresar
-                  </button>
-                  <button
-                    onClick={() => goRegister('cliente')}
-                    className="rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 transition"
-                  >
-                    Registrarme
-                  </button>
-                </>
-              )}
+            {/* News ticker */}
+            <div className="ticker-wrap">
+              <div className="ticker-label">Noticias</div>
+              <div className="ticker-viewport">
+                <div className="ticker-move ticker-move-slower">
+                  <span className="ticker-item">{newsTickerText}</span>
+                  <span className="ticker-sep">   •   </span>
+                  <span className="ticker-item">{newsTickerText}</span>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Hero content */}
-          <div className="mx-auto max-w-6xl px-4 pb-14 pt-6">
-            <div className="grid lg:grid-cols-2 gap-8 items-start">
-              <div>
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {pill(`${oppCount} oportunidades abiertas`)}
-                  {pill('Rosario + Chicago (delayed)')}
-                  {pill('Divisas + Noticias')}
-                </div>
-
-                <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight leading-[1.05]">
-                  Conectá productores y prestadores <span className="text-emerald-300">en un flujo simple</span>
-                </h1>
-                <p className="mt-4 text-white/80 text-lg leading-relaxed">
-                  Explorá oportunidades reales, seguí mercados y coordiná por WhatsApp una vez asignado el trabajo.
-                  Para ver detalles y tomar oportunidades, necesitás cuenta.
-                </p>
-
-                <div className="mt-6 flex flex-wrap gap-3">
-                  <button
-                    onClick={() => goRegister('cliente')}
-                    className="rounded-2xl bg-white px-5 py-3 text-slate-950 font-semibold hover:bg-white/90 transition"
-                  >
-                    Soy Productor — Publicar solicitud
-                  </button>
-                  <button
-                    onClick={() => goRegister('prestador')}
-                    className="rounded-2xl bg-emerald-500 px-5 py-3 text-slate-950 font-semibold hover:bg-emerald-400 transition"
-                  >
-                    Soy Prestador — Tomar trabajos
-                  </button>
-                  <button
-                    onClick={() => goLogin('/')}
-                    className="rounded-2xl border border-white/15 bg-white/5 px-5 py-3 font-semibold hover:bg-white/10 transition"
-                  >
-                    Ya tengo cuenta
-                  </button>
-                </div>
-
-                <div className="mt-8 grid sm:grid-cols-2 gap-3">
-                  {SERVICIOS.map((s) => (
-                    <div
-                      key={s.value}
-                      className={`rounded-2xl border border-white/10 bg-gradient-to-b ${s.tint} backdrop-blur px-4 py-4`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="text-2xl">{s.icon}</div>
-                        <span className="text-xs text-white/60">Catálogo</span>
-                      </div>
-                      <div className="mt-2 font-bold">{s.label}</div>
-                      <div className="text-sm text-white/75">
-                        Oportunidades filtradas por servicio y zona.
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Right column: market cards */}
-              <div className="space-y-4">
-                <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm text-white/70">Rosario (CAC/BCR)</div>
-                      <div className="text-xl font-extrabold tracking-tight">Precios Pizarra</div>
-                      <div className="text-xs text-white/60 mt-1">
-                        $/Tn y conversión a US$ (informativo).{' '}
-                        <a
-                          className="underline hover:text-white"
-                          href="http://www.cac.bcr.com.ar/es/precios-de-pizarra"
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Fuente
-                        </a>
-                      </div>
-                    </div>
-                    <div className="h-11 w-11 rounded-2xl bg-emerald-500/15 border border-white/10 grid place-items-center">
-                      📈
-                    </div>
-                  </div>
-
-                  {loadingRosario ? (
-                    <div className="mt-4 text-white/70">Cargando…</div>
-                  ) : !rosario ? (
-                    <div className="mt-4 text-white/70">No se pudo cargar Rosario.</div>
-                  ) : (
-                    <>
-                      <div className="mt-3 text-xs text-white/60">
-                        {rosario.dateText ? `Fecha: ${rosario.dateText}` : ''}{' '}
-                        {rosario.timeText ? `· Hora: ${rosario.timeText}` : ''}{' '}
-                        {rosario.tcBnaComprador ? `· TC BNA: ${formatArs(rosario.tcBnaComprador)}` : ''}
-                      </div>
-
-                      <div className="mt-4 overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="text-left text-white/70">
-                              <th className="py-2">Producto</th>
-                              <th className="py-2">$ / Tn</th>
-                              <th className="py-2">US$ / Tn</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {rosario.items.map((it) => (
-                              <tr key={it.commodity} className="border-t border-white/10">
-                                <td className="py-2 font-semibold">{it.commodity}</td>
-                                <td className="py-2">{formatArs(it.ars_per_tn)}</td>
-                                <td className="py-2">{formatUsd(it.usd_per_tn)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                <div className="grid sm:grid-cols-2 gap-4">
-                  <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur p-5">
-                    <div className="text-sm text-white/70">Chicago (CME)</div>
-                    <div className="text-lg font-extrabold tracking-tight">Delayed</div>
-                    <div className="text-xs text-white/60 mt-1">
-                      Delayed ≥ 10 min.{' '}
-                      <a
-                        className="underline hover:text-white"
-                        href="https://www.cmegroup.com/market-data/browse-data/delayed-quotes.html"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Ver en CME
-                      </a>
-                    </div>
-                    <div className="mt-3 text-sm text-white/75 leading-relaxed">
-                      Mostramos el bloque con link oficial. Si querés, en la próxima iteración intentamos
-                      extraer valores “Grains/Oilseeds” y cachearlos (según disponibilidad/licencia).
-                    </div>
-                  </div>
-
-                  <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur p-5">
-                    <div className="text-sm text-white/70">Divisas (AR)</div>
-                    <div className="text-lg font-extrabold tracking-tight">Panel rápido</div>
-                    <div className="text-xs text-white/60 mt-1">
-                      Fuente: DolarApi.
-                    </div>
-
-                    {loadingFx ? (
-                      <div className="mt-4 text-white/70">Cargando…</div>
-                    ) : fx.length === 0 ? (
-                      <div className="mt-4 text-white/70">No se pudieron cargar divisas.</div>
-                    ) : (
-                      <div className="mt-4 space-y-2">
-                        {fx.slice(0, 5).map((d) => (
-                          <div
-                            key={d.casa}
-                            className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2"
-                          >
-                            <div className="text-sm font-semibold">{d.nombre}</div>
-                            <div className="text-sm text-white/80">
-                              <span className="text-white/50">V:</span>{' '}
-                              <span className="font-semibold">{d.venta ?? '—'}</span>
-                            </div>
-                          </div>
-                        ))}
-                        <div className="text-xs text-white/55 pt-1">
-                          (Mostrando 5. El resto queda dentro del endpoint /api/public/divisas)
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-              {/* end right column */}
-            </div>
-          </div>
+          <style jsx global>{`
+            .ticker-wrap {
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              min-height: 22px;
+            }
+            .ticker-label {
+              font-size: 11px;
+              font-weight: 700;
+              color: #0f172a; /* slate-900 */
+              padding: 2px 8px;
+              border-radius: 999px;
+              background: #f1f5f9; /* slate-100 */
+              border: 1px solid #e2e8f0; /* slate-200 */
+              white-space: nowrap;
+            }
+            .ticker-viewport {
+              position: relative;
+              overflow: hidden;
+              width: 100%;
+              border-radius: 999px;
+              border: 1px solid #e2e8f0;
+              background: #ffffff;
+              height: 22px;
+              display: flex;
+              align-items: center;
+            }
+            .ticker-move {
+              display: inline-flex;
+              align-items: center;
+              white-space: nowrap;
+              will-change: transform;
+              animation: tickerScroll 22s linear infinite;
+              padding-left: 100%;
+            }
+            .ticker-move-slower {
+              animation-duration: 30s;
+            }
+            .ticker-item {
+              font-size: 12px;
+              color: #334155; /* slate-700 */
+              padding: 0 10px;
+            }
+            .ticker-sep {
+              font-size: 12px;
+              color: #94a3b8; /* slate-400 */
+            }
+            @keyframes tickerScroll {
+              0% {
+                transform: translateX(0);
+              }
+              100% {
+                transform: translateX(-100%);
+              }
+            }
+            @media (prefers-reduced-motion: reduce) {
+              .ticker-move,
+              .ticker-move-slower {
+                animation: none;
+                padding-left: 0;
+              }
+            }
+          `}</style>
         </div>
       </div>
 
-      {/* MAIN CONTENT */}
-      <div className="bg-slate-50 text-slate-900">
-        <div className="mx-auto max-w-6xl px-4 py-12 space-y-10">
-          {/* Oportunidades */}
-          <section className="rounded-3xl border border-slate-200 bg-white shadow-[0_10px_30px_-18px_rgba(0,0,0,0.35)] overflow-hidden">
-            <div className="p-6 sm:p-7 border-b border-slate-100">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h2 className="text-2xl font-extrabold tracking-tight">Oportunidades abiertas</h2>
-                  <p className="text-sm text-slate-600 mt-1">
-                    Vista pública: no mostramos costo de créditos ni contacto. Para tomar, necesitás cuenta.
-                  </p>
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => goRegister('prestador')}
-                    className="rounded-xl bg-slate-900 text-white px-4 py-2 font-semibold hover:bg-slate-800 transition"
-                  >
-                    Tomar trabajos
-                  </button>
-                </div>
+      {/* HEADER */}
+      <header className="bg-white border-b">
+        <div className="mx-auto max-w-7xl px-4 py-5 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-2xl bg-emerald-600 text-white grid place-items-center font-bold">
+              A
+            </div>
+            <div>
+              <div className="text-lg font-extrabold leading-tight">AgroConnect</div>
+              <div className="text-xs text-slate-600">
+                Portal público · {oppCount} oportunidades abiertas
               </div>
             </div>
+          </div>
 
-            <div className="p-6 sm:p-7">
-              {loadingOpps ? (
-                <div className="text-slate-600">Cargando oportunidades…</div>
-              ) : oportunidadesView.length === 0 ? (
-                <div className="text-slate-600">No hay oportunidades abiertas por ahora.</div>
+          <div className="flex items-center gap-2">
+            {isLogged ? (
+              <>
+                <button
+                  onClick={() => router.push('/dashboard/cliente')}
+                  className="hidden sm:inline-flex px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                >
+                  Panel Productor
+                </button>
+                <button
+                  onClick={() => router.push('/dashboard/prestador')}
+                  className="px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-semibold"
+                >
+                  Ir al Panel
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => goLogin('/')}
+                  className="px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                >
+                  Ingresar
+                </button>
+                <button
+                  onClick={() => goRegister('cliente')}
+                  className="px-3 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800 font-semibold"
+                >
+                  Registrarme
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* MAIN 3-COLUMN LAYOUT */}
+      <main className="mx-auto max-w-7xl px-4 py-8">
+        <div className="grid grid-cols-12 gap-6">
+          {/* LEFT SIDEBAR */}
+          <aside className="col-span-12 lg:col-span-3 space-y-6">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm text-slate-600">Mercado de granos</div>
+                  <div className="text-xl font-extrabold">Rosario</div>
+                  <div className="text-xs text-slate-500 mt-1">
+                    CAC/BCR · Precios Pizarra ($/Tn)
+                  </div>
+                </div>
+                <div className="h-10 w-10 rounded-2xl bg-emerald-50 border border-emerald-100 grid place-items-center">
+                  📈
+                </div>
+              </div>
+
+              {loadingRosario ? (
+                <div className="text-slate-600 mt-4">Cargando…</div>
+              ) : !rosario ? (
+                <div className="text-slate-600 mt-4">No se pudo cargar Rosario.</div>
               ) : (
-                <div className="grid lg:grid-cols-2 gap-4">
-                  {oportunidadesView.map((o) => (
-                    <div
-                      key={o.id}
-                      className="group rounded-2xl border border-slate-200 bg-white hover:border-slate-300 hover:shadow-[0_12px_30px_-22px_rgba(0,0,0,0.35)] transition overflow-hidden"
+                <>
+                  <div className="text-xs text-slate-500 mt-3">
+                    {rosario.dateText ? `Fecha: ${rosario.dateText}` : ''}{' '}
+                    {rosario.timeText ? `· Hora: ${rosario.timeText}` : ''}{' '}
+                    {rosario.tcBnaComprador ? `· TC BNA: ${formatArs(rosario.tcBnaComprador)}` : ''}
+                  </div>
+
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-slate-600">
+                          <th className="py-2">Prod.</th>
+                          <th className="py-2">$</th>
+                          <th className="py-2">US$</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rosario.items.map((it) => (
+                          <tr key={it.commodity} className="border-t">
+                            <td className="py-2 font-semibold">{it.commodity}</td>
+                            <td className="py-2">{formatArs(it.ars_per_tn)}</td>
+                            <td className="py-2">{formatUsd(it.usd_per_tn)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <a
+                    href={rosario.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-4 inline-flex text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline"
+                  >
+                    Ver fuente
+                  </a>
+                </>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="text-sm text-slate-600">Mercado de granos</div>
+              <div className="text-xl font-extrabold">Chicago (CME)</div>
+              <div className="text-xs text-slate-500 mt-1">
+                Delayed (≥ 10 min) + link oficial
+              </div>
+
+              <div className="mt-3 text-sm text-slate-700 leading-relaxed">
+                Mostramos delayed y dejamos el acceso al mercado en CME para ver al momento.
+              </div>
+
+              <a
+                href="https://www.cmegroup.com/market-data/browse-data/delayed-quotes.html"
+                target="_blank"
+                rel="noreferrer"
+                className="mt-4 inline-flex px-3 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800 font-semibold text-sm"
+              >
+                Abrir CME (Delayed Quotes)
+              </a>
+            </div>
+          </aside>
+
+          {/* CENTER (OPPORTUNITIES) */}
+          <section className="col-span-12 lg:col-span-6">
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="p-6 border-b bg-gradient-to-r from-emerald-50 to-white">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-2xl font-extrabold">Oportunidades abiertas</h2>
+                    <p className="text-sm text-slate-600 mt-1">
+                      Vista pública: sin costo de créditos ni contacto. Para tomar, necesitás cuenta.
+                    </p>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => goRegister('cliente')}
+                      className="hidden sm:inline-flex px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 font-semibold"
                     >
-                      <div className={`h-1.5 bg-gradient-to-r ${o.servicio?.tint ?? 'from-slate-200 to-transparent'}`} />
-                      <div className="p-5">
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <div className="text-lg font-extrabold tracking-tight">
-                              {o.servicio?.icon ?? '🧩'} {o.servicio?.label ?? o.tipo_servicio}
-                            </div>
-                            <div className="text-sm text-slate-600">
-                              {o.localidad}, {o.provincia}
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-xs text-slate-500">Necesaria</div>
-                            <div className="text-sm font-semibold">
-                              {o.fecha_necesaria
-                                ? new Date(o.fecha_necesaria).toLocaleDateString('es-AR')
-                                : '—'}
-                            </div>
-                          </div>
-                        </div>
+                      Publicar solicitud
+                    </button>
+                    <button
+                      onClick={() => goRegister('prestador')}
+                      className="px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-semibold"
+                    >
+                      Tomar trabajos
+                    </button>
+                  </div>
+                </div>
+              </div>
 
-                        <p className="mt-3 text-sm text-slate-700 leading-relaxed">
-                          {o.desc160}
-                        </p>
+              <div className="p-6">
+                {loadingOpps ? (
+                  <div className="text-slate-600">Cargando oportunidades…</div>
+                ) : oportunidadesView.length === 0 ? (
+                  <div className="text-slate-600">No hay oportunidades abiertas por ahora.</div>
+                ) : (
+                  <div className="space-y-4">
+                    {oportunidadesView.map((o) => (
+                      <div
+                        key={o.id}
+                        className="rounded-2xl border border-slate-200 bg-white hover:shadow-md transition overflow-hidden"
+                      >
+                        <div className="p-5">
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <div className="text-lg font-extrabold">
+                                {o.servicio?.icon ?? '🧩'}{' '}
+                                {o.servicio?.label ?? o.tipo_servicio}
+                              </div>
+                              <div className="text-sm text-slate-600">
+                                {o.localidad}, {o.provincia}
+                              </div>
+                            </div>
 
-                        <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-                          <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
-                            <div className="text-xs text-slate-500">Hectáreas</div>
-                            <div className="font-bold">{o.hectareas ?? '—'}</div>
-                          </div>
-                          <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
-                            <div className="text-xs text-slate-500">Toneladas</div>
-                            <div className="font-bold">{o.toneladas ?? '—'}</div>
-                          </div>
-                          <div className="col-span-2 rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
-                            <div className="text-xs text-slate-500">Presupuesto</div>
-                            <div className="font-bold">
-                              {o.presupuesto_estimado
-                                ? '$' + o.presupuesto_estimado.toLocaleString('es-AR')
-                                : '—'}
+                            <div className="text-right">
+                              <div className="text-xs text-slate-500">Fecha necesaria</div>
+                              <div className="text-sm font-semibold">
+                                {o.fecha_necesaria
+                                  ? new Date(o.fecha_necesaria).toLocaleDateString('es-AR')
+                                  : '—'}
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        <div className="mt-4 flex gap-2">
-                          <button
-                            onClick={() => onVerOTomar(o)}
-                            className="flex-1 rounded-xl bg-emerald-600 text-white px-4 py-2 font-semibold hover:bg-emerald-700 transition"
-                          >
-                            Ver / Tomar (requiere cuenta)
-                          </button>
-                          <button
-                            onClick={() => goRegister('cliente')}
-                            className="rounded-xl border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50 transition"
-                          >
-                            Publicar
-                          </button>
+                          <p className="mt-3 text-sm text-slate-700 leading-relaxed">
+                            {o.desc160}
+                          </p>
+
+                          <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+                            <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
+                              <div className="text-xs text-slate-500">Hectáreas</div>
+                              <div className="font-bold">{o.hectareas ?? '—'}</div>
+                            </div>
+                            <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
+                              <div className="text-xs text-slate-500">Toneladas</div>
+                              <div className="font-bold">{o.toneladas ?? '—'}</div>
+                            </div>
+                            <div className="col-span-2 rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
+                              <div className="text-xs text-slate-500">Presupuesto</div>
+                              <div className="font-bold">
+                                {o.presupuesto_estimado
+                                  ? '$' + o.presupuesto_estimado.toLocaleString('es-AR')
+                                  : '—'}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 flex gap-2">
+                            <button
+                              onClick={() => onVerOTomar(o)}
+                              className="flex-1 px-4 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800 font-semibold"
+                            >
+                              Ver / Tomar (requiere cuenta)
+                            </button>
+                            <button
+                              onClick={() => goRegister('cliente')}
+                              className="px-4 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 font-semibold"
+                            >
+                              Publicar
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </section>
 
-          {/* Noticias */}
-          <section className="rounded-3xl border border-slate-200 bg-white shadow-[0_10px_30px_-18px_rgba(0,0,0,0.35)] overflow-hidden">
-            <div className="p-6 sm:p-7 border-b border-slate-100">
-              <div className="flex items-start justify-between gap-4">
+          {/* RIGHT SIDEBAR (NEWS LIST) */}
+          <aside className="col-span-12 lg:col-span-3 space-y-6">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-2xl font-extrabold tracking-tight">Noticias agro (Argentina)</h2>
-                  <p className="text-sm text-slate-600 mt-1">
-                    Titulares vía RSS de TodoAgro.{' '}
-                    <a className="underline" href="https://www.todoagro.com.ar/noticias/feed/" target="_blank" rel="noreferrer">
-                      RSS
-                    </a>
-                  </p>
+                  <div className="text-sm text-slate-600">Actualidad</div>
+                  <div className="text-xl font-extrabold">Noticias</div>
+                  <div className="text-xs text-slate-500 mt-1">Resumen y acceso a la nota</div>
+                </div>
+                <div className="h-10 w-10 rounded-2xl bg-slate-100 border border-slate-200 grid place-items-center">
+                  📰
                 </div>
               </div>
-            </div>
 
-            <div className="p-6 sm:p-7">
               {loadingNews ? (
-                <div className="text-slate-600">Cargando noticias…</div>
+                <div className="text-slate-600 mt-4">Cargando…</div>
               ) : news.length === 0 ? (
-                <div className="text-slate-600">No se pudieron cargar noticias.</div>
+                <div className="text-slate-600 mt-4">No se pudieron cargar noticias.</div>
               ) : (
-                <div className="grid lg:grid-cols-2 gap-3">
-                  {news.map((n) => (
+                <div className="mt-4 space-y-3">
+                  {news.slice(0, 10).map((n) => (
                     <a
                       key={n.link}
                       href={n.link}
                       target="_blank"
                       rel="noreferrer"
-                      className="rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 transition p-4"
+                      className="block rounded-xl border border-slate-200 bg-slate-50 hover:bg-white hover:shadow-sm transition p-3"
+                      title={n.title}
                     >
-                      <div className="font-semibold">{n.title}</div>
+                      <div className="font-semibold text-sm leading-snug">
+                        {truncate(n.title, 90)}
+                      </div>
                       <div className="text-xs text-slate-500 mt-1">
                         {n.pubDate ? new Date(n.pubDate).toLocaleString('es-AR') : ''}{' '}
                         {n.source ? `· ${n.source}` : ''}
@@ -559,13 +569,33 @@ export default function HomePage() {
                 </div>
               )}
             </div>
-          </section>
 
-          <div className="text-xs text-slate-500">
-            Chicago (CME) se muestra como “Delayed” (≥ 10 min) según la fuente. [Source](https://www.cmegroup.com/market-data/browse-data/delayed-quotes.html)
-          </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="text-sm text-slate-600">Accesos rápidos</div>
+              <div className="mt-3 flex flex-col gap-2">
+                <button
+                  onClick={() => goRegister('cliente')}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-semibold"
+                >
+                  Publicar una solicitud
+                </button>
+                <button
+                  onClick={() => goRegister('prestador')}
+                  className="px-4 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800 font-semibold"
+                >
+                  Registrarme como prestador
+                </button>
+                <button
+                  onClick={() => goLogin('/')}
+                  className="px-4 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 font-semibold"
+                >
+                  Ingresar
+                </button>
+              </div>
+            </div>
+          </aside>
         </div>
-      </div>
+      </main>
     </div>
   )
 }
