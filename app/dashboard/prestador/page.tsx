@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { calculateDistance } from '@/lib/geo/argentina'
-import { LogOut, Search, Lock, MapPin, Coins } from 'lucide-react'
+import { LogOut, Search, Lock, MapPin, Coins, User } from 'lucide-react'
 
 type Usuario = {
   id: string
@@ -55,27 +55,7 @@ const SERVICIOS = [
   { value: 'siembra', label: 'Siembra', icon: '🌱' },
   { value: 'cosecha', label: 'Cosecha', icon: '🌾' },
   { value: 'flete', label: 'Flete', icon: '🚛' },
-] as const
-
-function normalizePhoneToWa(phoneRaw: string) {
-  let digits = (phoneRaw || '').replace(/\D/g, '')
-
-  // Heurística Argentina si viene sin código país:
-  // si guardaron 10/11 dígitos locales, lo pasamos a 549 + local
-  if (digits.length === 10 || digits.length === 11) {
-    if (digits.startsWith('0')) digits = digits.slice(1)
-    digits = digits.replace(/^(\d{2,4})15/, '$1') // quita "15" viejo
-    digits = `549${digits}`
-  }
-
-  return digits
-}
-
-function buildWhatsAppUrl(phoneRaw: string, text: string) {
-  const wa = normalizePhoneToWa(phoneRaw)
-  const encoded = encodeURIComponent(text)
-  return `https://wa.me/${wa}?text=${encoded}`
-}
+]
 
 export default function PrestadorDashboard() {
   const router = useRouter()
@@ -242,7 +222,7 @@ export default function PrestadorDashboard() {
       if (creditosError) throw creditosError
 
       // 3) Registrar transacción
-      await (supabase.from('transacciones') as any).insert({
+      const { error: trxError } = await (supabase.from('transacciones') as any).insert({
         solicitud_id: solicitud.id,
         prestador_id: usuario.id,
         cliente_id: solicitud.cliente_id,
@@ -251,6 +231,9 @@ export default function PrestadorDashboard() {
         estado_pago: 'aprobado',
       })
 
+      if (trxError) throw trxError
+
+      // ✅ UX: cerrar modal + ir a Mis Trabajos + refrescar datos
       alert('¡Trabajo tomado! Ahora podés ver los datos de contacto del productor.')
       setSelectedSolicitud(null)
       setTab('trabajos')
@@ -263,6 +246,7 @@ export default function PrestadorDashboard() {
     }
   }
 
+  // ✅ Compra con POST a /api/mp/preference y redirección a init_point
   const handleComprarPack = async (pack: Pack) => {
     if (!usuario) {
       alert('No se cargó el perfil del prestador.')
@@ -327,11 +311,22 @@ export default function PrestadorDashboard() {
               <h1 className="text-2xl font-bold">Panel de Prestador</h1>
               <p className="text-gray-600">{usuario?.nombre}</p>
             </div>
+
+            {/* ✅ Acciones header: Créditos + Mi Perfil + Salir */}
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2 px-4 py-2 bg-primary-50 rounded-lg">
                 <Coins className="w-5 h-5 text-primary-600" />
                 <span className="font-bold text-primary-700">{usuario?.creditos_disponibles} créditos</span>
               </div>
+
+              <button
+                onClick={() => router.push('/dashboard/mi-perfil')}
+                className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+              >
+                <User className="w-5 h-5" />
+                Mi Perfil
+              </button>
+
               <button
                 onClick={handleLogout}
                 className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
@@ -438,7 +433,7 @@ export default function PrestadorDashboard() {
                           <h3 className="text-xl font-bold">{servicio?.label}</h3>
                           <div className="flex items-center gap-2 text-sm text-gray-600">
                             <MapPin className="w-4 h-4" />
-                            {solicitud.localidad}, {solicitud.provincia}
+                            {solicitud.localidad}, {solicitud.provincia}{' '}
                             <span className="text-primary-600 font-semibold">
                               ({solicitud.distancia?.toFixed(0)} km)
                             </span>
@@ -520,10 +515,6 @@ export default function PrestadorDashboard() {
                 ? (solicitud as any).cliente[0]
                 : (solicitud as any).cliente
 
-              const whatsappText = `Hola, soy ${usuario?.nombre}. Tomé tu solicitud de ${
-                servicio?.label ?? 'servicio'
-              } en ${solicitud.localidad}, ${solicitud.provincia}. ¿Cuándo podemos coordinar?`
-
               return (
                 <div key={solicitud.id} className="card">
                   <div className="flex items-start justify-between mb-4">
@@ -548,30 +539,17 @@ export default function PrestadorDashboard() {
                     <h4 className="font-semibold mb-2">Datos del Productor:</h4>
                     <div className="space-y-1 text-sm">
                       <div>
-                        <strong>Nombre:</strong> {cliente?.nombre ?? '—'}
+                        <strong>Nombre:</strong> {cliente?.nombre}
                       </div>
                       <div>
-                        <strong>Email:</strong> {cliente?.email ?? '—'}
+                        <strong>Email:</strong> {cliente?.email}
                       </div>
-                      <div>
-                        <strong>Teléfono:</strong> {cliente?.telefono ?? '—'}
-                      </div>
+                      {cliente?.telefono && (
+                        <div>
+                          <strong>Teléfono:</strong> {cliente.telefono}
+                        </div>
+                      )}
                     </div>
-
-                    {cliente?.telefono ? (
-                      <a
-                        className="btn-primary w-full mt-3"
-                        href={buildWhatsAppUrl(cliente.telefono, whatsappText)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Contactar por WhatsApp
-                      </a>
-                    ) : (
-                      <button className="btn-secondary w-full mt-3" disabled>
-                        El productor no cargó teléfono
-                      </button>
-                    )}
                   </div>
 
                   <button className="btn-primary w-full">Marcar como Completado</button>
@@ -629,8 +607,12 @@ export default function PrestadorDashboard() {
 
                     {pack.descuento_porcentaje > 0 && (
                       <div className="mb-2">
-                        <span className="text-sm text-gray-500 line-through">${precioOriginal.toLocaleString('es-AR')}</span>
-                        <span className="ml-2 text-sm font-bold text-green-600">{pack.descuento_porcentaje}% OFF</span>
+                        <span className="text-sm text-gray-500 line-through">
+                          ${precioOriginal.toLocaleString('es-AR')}
+                        </span>
+                        <span className="ml-2 text-sm font-bold text-green-600">
+                          {pack.descuento_porcentaje}% OFF
+                        </span>
                       </div>
                     )}
 
@@ -655,7 +637,8 @@ export default function PrestadorDashboard() {
 
             <div className="space-y-4 mb-6">
               <div>
-                <strong>Tipo:</strong> {SERVICIOS.find((s) => s.value === selectedSolicitud.tipo_servicio)?.label}
+                <strong>Tipo:</strong>{' '}
+                {SERVICIOS.find((s) => s.value === selectedSolicitud.tipo_servicio)?.label}
               </div>
               <div>
                 <strong>Descripción:</strong> {selectedSolicitud.descripcion}
