@@ -57,6 +57,31 @@ const SERVICIOS = [
   { value: 'flete', label: 'Flete', icon: '🚛' },
 ]
 
+// WhatsApp: https://wa.me/<number>?text=<encoded_text>
+// number: internacional, SOLO dígitos (sin +, sin espacios, sin guiones) [Source](https://faq.whatsapp.com/425247423114725)
+function normalizePhoneToWa(phoneRaw: string) {
+  let digits = (phoneRaw || '').replace(/\D/g, '')
+  if (!digits) return null
+
+  // Heurística AR (si vino local 10/11 dígitos):
+  // - quita 0 inicial
+  // - quita "15" luego de código de área (ej 11 15 xxxx)
+  // - agrega prefijo 549
+  if (digits.length === 10 || digits.length === 11) {
+    if (digits.startsWith('0')) digits = digits.slice(1)
+    digits = digits.replace(/^(\d{2,4})15/, '$1')
+    digits = `549${digits}`
+  }
+
+  return digits
+}
+
+function buildWhatsAppUrl(phoneRaw: string, text: string) {
+  const wa = normalizePhoneToWa(phoneRaw)
+  if (!wa) return null
+  return `https://wa.me/${wa}?text=${encodeURIComponent(text)}`
+}
+
 export default function PrestadorDashboard() {
   const router = useRouter()
   const [usuario, setUsuario] = useState<Usuario | null>(null)
@@ -316,7 +341,9 @@ export default function PrestadorDashboard() {
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2 px-4 py-2 bg-primary-50 rounded-lg">
                 <Coins className="w-5 h-5 text-primary-600" />
-                <span className="font-bold text-primary-700">{usuario?.creditos_disponibles} créditos</span>
+                <span className="font-bold text-primary-700">
+                  {usuario?.creditos_disponibles} créditos
+                </span>
               </div>
 
               <button
@@ -396,11 +423,13 @@ export default function PrestadorDashboard() {
                     onChange={(e) => setFilters({ ...filters, tipo_servicio: e.target.value })}
                   >
                     <option value="">Todos mis servicios</option>
-                    {SERVICIOS.filter((s) => usuario?.servicios_ofrecidos?.includes(s.value)).map((s) => (
-                      <option key={s.value} value={s.value}>
-                        {s.icon} {s.label}
-                      </option>
-                    ))}
+                    {SERVICIOS.filter((s) => usuario?.servicios_ofrecidos?.includes(s.value)).map(
+                      (s) => (
+                        <option key={s.value} value={s.value}>
+                          {s.icon} {s.label}
+                        </option>
+                      )
+                    )}
                   </select>
                 </div>
                 <div>
@@ -408,7 +437,9 @@ export default function PrestadorDashboard() {
                   <select
                     className="input"
                     value={filters.distancia_max}
-                    onChange={(e) => setFilters({ ...filters, distancia_max: Number(e.target.value) })}
+                    onChange={(e) =>
+                      setFilters({ ...filters, distancia_max: Number(e.target.value) })
+                    }
                   >
                     <option value={0}>Cualquier distancia</option>
                     <option value={50}>Hasta 50 km</option>
@@ -480,7 +511,10 @@ export default function PrestadorDashboard() {
                     </div>
 
                     <div className="flex gap-3">
-                      <button onClick={() => setSelectedSolicitud(solicitud)} className="btn-secondary flex-1">
+                      <button
+                        onClick={() => setSelectedSolicitud(solicitud)}
+                        className="btn-secondary flex-1"
+                      >
                         Ver Detalles
                       </button>
                       <button
@@ -514,6 +548,17 @@ export default function PrestadorDashboard() {
               const cliente = Array.isArray((solicitud as any).cliente)
                 ? (solicitud as any).cliente[0]
                 : (solicitud as any).cliente
+
+              const servicioLabel =
+                SERVICIOS.find((s) => s.value === solicitud.tipo_servicio)?.label ?? 'un servicio'
+
+              const waUrl =
+                cliente?.telefono && usuario
+                  ? buildWhatsAppUrl(
+                      cliente.telefono,
+                      `Hola ${cliente?.nombre ?? ''}. Soy ${usuario?.nombre ?? 'tu prestador'} y tomé tu solicitud de ${servicioLabel} en ${solicitud.localidad}, ${solicitud.provincia}. ¿Cuándo podemos coordinar?`
+                    )
+                  : null
 
               return (
                 <div key={solicitud.id} className="card">
@@ -552,6 +597,18 @@ export default function PrestadorDashboard() {
                     </div>
                   </div>
 
+                  {waUrl && (
+                    <a
+                      href={waUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-primary w-full flex items-center justify-center gap-2 mb-3"
+                    >
+                      <MessageCircle className="w-5 h-5" />
+                      Contactar por WhatsApp
+                    </a>
+                  )}
+
                   <button className="btn-primary w-full">Marcar como Completado</button>
                 </div>
               )
@@ -577,8 +634,12 @@ export default function PrestadorDashboard() {
                 <Coins className="w-6 h-6 text-primary-600" />
                 <h2 className="text-xl font-bold">Tus Créditos</h2>
               </div>
-              <div className="text-4xl font-bold text-primary-700 mb-2">{usuario?.creditos_disponibles} créditos</div>
-              <p className="text-gray-700">Usá créditos para tomar trabajos. Cada servicio tiene un costo diferente.</p>
+              <div className="text-4xl font-bold text-primary-700 mb-2">
+                {usuario?.creditos_disponibles} créditos
+              </div>
+              <p className="text-gray-700">
+                Usá créditos para tomar trabajos. Cada servicio tiene un costo diferente.
+              </p>
             </div>
 
             <h3 className="text-2xl font-bold mb-6">Packs Disponibles</h3>
@@ -592,7 +653,9 @@ export default function PrestadorDashboard() {
                 return (
                   <div
                     key={pack.id}
-                    className={`card ${pack.popular ? 'ring-2 ring-primary-500' : ''} hover:shadow-lg transition-shadow`}
+                    className={`card ${
+                      pack.popular ? 'ring-2 ring-primary-500' : ''
+                    } hover:shadow-lg transition-shadow`}
                   >
                     {pack.popular && (
                       <div className="bg-primary-600 text-white text-sm font-bold px-3 py-1 rounded-full inline-block mb-3">
@@ -616,7 +679,9 @@ export default function PrestadorDashboard() {
                       </div>
                     )}
 
-                    <div className="text-3xl font-bold mb-4">${pack.precio_ars.toLocaleString('es-AR')}</div>
+                    <div className="text-3xl font-bold mb-4">
+                      ${pack.precio_ars.toLocaleString('es-AR')}
+                    </div>
 
                     <button onClick={() => handleComprarPack(pack)} className="btn-primary w-full">
                       Comprar
