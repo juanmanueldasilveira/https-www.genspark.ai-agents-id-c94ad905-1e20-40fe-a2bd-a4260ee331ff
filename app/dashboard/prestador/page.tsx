@@ -57,6 +57,16 @@ const SERVICIOS = [
   { value: 'flete', label: 'Flete', icon: '🚛' },
 ]
 
+const ESTADOS_PRESTADOR: Record<
+  string,
+  { label: string; color: string }
+> = {
+  abierta: { label: 'Abierta', color: 'bg-blue-100 text-blue-800' },
+  en_proceso: { label: 'En Proceso', color: 'bg-yellow-100 text-yellow-800' },
+  completada: { label: 'Completado', color: 'bg-green-100 text-green-800' },
+  cancelada: { label: 'Cancelada', color: 'bg-red-100 text-red-800' },
+}
+
 // WhatsApp: https://wa.me/<number>?text=<encoded_text>
 // number: internacional, SOLO dígitos (sin +, sin espacios, sin guiones) [Source](https://faq.whatsapp.com/425247423114725)
 function normalizePhoneToWa(phoneRaw: string) {
@@ -157,7 +167,7 @@ export default function PrestadorDashboard() {
 
       setSolicitudes(solicitudesConDistancia)
 
-      // Load mis solicitudes (trabajos tomados)
+      // Load mis solicitudes (trabajos tomados) — incluye en_proceso y completada
       const { data: misData, error: misError } = await supabase
         .from('solicitudes')
         .select(
@@ -266,6 +276,45 @@ export default function PrestadorDashboard() {
     } catch (error) {
       console.error('Error tomando trabajo:', error)
       alert('Error al tomar el trabajo')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleMarcarComoCompletado = async (solicitud: Solicitud) => {
+    if (!usuario) return
+
+    if (solicitud.estado !== 'en_proceso') {
+      alert('Este trabajo no está en proceso.')
+      return
+    }
+
+    if (!confirm('¿Marcar este trabajo como completado?')) return
+
+    setLoading(true)
+    try {
+      const { data: updated, error } = await supabase
+        .from('solicitudes')
+        .update({ estado: 'completada' })
+        .eq('id', solicitud.id)
+        .eq('prestador_id', usuario.id)
+        .eq('estado', 'en_proceso')
+        .select('id, estado')
+        .maybeSingle()
+
+      if (error) throw error
+
+      if (!updated) {
+        alert('No se pudo completar (puede que ya haya cambiado de estado o no tengas permisos).')
+        await loadData()
+        return
+      }
+
+      alert('Trabajo marcado como completado.')
+      await loadData()
+    } catch (e) {
+      console.error('Error marcando como completado:', e)
+      alert('Error al marcar como completado')
     } finally {
       setLoading(false)
     }
@@ -549,6 +598,10 @@ export default function PrestadorDashboard() {
                 ? (solicitud as any).cliente[0]
                 : (solicitud as any).cliente
 
+              const estadoUI =
+                ESTADOS_PRESTADOR[solicitud.estado] ||
+                ({ label: solicitud.estado, color: 'bg-gray-100 text-gray-800' } as const)
+
               const servicioLabel =
                 SERVICIOS.find((s) => s.value === solicitud.tipo_servicio)?.label ?? 'un servicio'
 
@@ -573,8 +626,11 @@ export default function PrestadorDashboard() {
                         </div>
                       </div>
                     </div>
-                    <span className="px-3 py-1 rounded-full text-sm font-semibold bg-yellow-100 text-yellow-800">
-                      En Proceso
+
+                    <span
+                      className={`px-3 py-1 rounded-full text-sm font-semibold ${estadoUI.color}`}
+                    >
+                      {estadoUI.label}
                     </span>
                   </div>
 
@@ -609,7 +665,18 @@ export default function PrestadorDashboard() {
                     </a>
                   )}
 
-                  <button className="btn-primary w-full">Marcar como Completado</button>
+                  {solicitud.estado === 'en_proceso' ? (
+                    <button
+                      onClick={() => handleMarcarComoCompletado(solicitud)}
+                      className="btn-primary w-full"
+                    >
+                      Marcar como Completado
+                    </button>
+                  ) : (
+                    <button className="btn-secondary w-full" disabled>
+                      Completado
+                    </button>
+                  )}
                 </div>
               )
             })}
