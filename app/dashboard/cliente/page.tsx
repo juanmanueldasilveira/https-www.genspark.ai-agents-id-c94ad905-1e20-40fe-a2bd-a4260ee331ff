@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { PROVINCIAS_ARGENTINA, getProvinciaCoords } from '@/lib/geo/argentina'
-import { Plus, LogOut, MapPin, Calendar, FileText } from 'lucide-react'
+import { Plus, LogOut, MapPin, FileText, User } from 'lucide-react'
 
 type Usuario = {
   id: string
@@ -67,7 +67,9 @@ export default function ClienteDashboard() {
 
   const loadData = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
       if (!user) {
         router.push('/auth/login')
         return
@@ -195,10 +197,25 @@ export default function ClienteDashboard() {
               <h1 className="text-2xl font-bold">Panel de Productor</h1>
               <p className="text-gray-600">{usuario?.nombre}</p>
             </div>
-            <button onClick={handleLogout} className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
-              <LogOut className="w-5 h-5" />
-              Salir
-            </button>
+
+            {/* ✅ Acciones header: Mi Perfil + Salir */}
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => router.push('/dashboard/mi-perfil')}
+                className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+              >
+                <User className="w-5 h-5" />
+                Mi Perfil
+              </button>
+
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+              >
+                <LogOut className="w-5 h-5" />
+                Salir
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -213,19 +230,19 @@ export default function ClienteDashboard() {
           <div className="card">
             <div className="text-sm text-gray-600 mb-1">Abiertas</div>
             <div className="text-3xl font-bold text-blue-600">
-              {solicitudes.filter(s => s.estado === 'abierta').length}
+              {solicitudes.filter((s) => s.estado === 'abierta').length}
             </div>
           </div>
           <div className="card">
             <div className="text-sm text-gray-600 mb-1">En Proceso</div>
             <div className="text-3xl font-bold text-yellow-600">
-              {solicitudes.filter(s => s.estado === 'en_proceso').length}
+              {solicitudes.filter((s) => s.estado === 'en_proceso').length}
             </div>
           </div>
           <div className="card">
             <div className="text-sm text-gray-600 mb-1">Completadas</div>
             <div className="text-3xl font-bold text-green-600">
-              {solicitudes.filter(s => s.estado === 'completada').length}
+              {solicitudes.filter((s) => s.estado === 'completada').length}
             </div>
           </div>
         </div>
@@ -240,10 +257,10 @@ export default function ClienteDashboard() {
 
         {/* Solicitudes List */}
         <div className="space-y-4">
-          {solicitudes.map(solicitud => {
-            const servicio = SERVICIOS.find(s => s.value === solicitud.tipo_servicio)
+          {solicitudes.map((solicitud) => {
+            const servicio = SERVICIOS.find((s) => s.value === solicitud.tipo_servicio)
             const estado = ESTADOS[solicitud.estado as keyof typeof ESTADOS]
-            
+
             return (
               <div key={solicitud.id} className="card hover:shadow-md transition-shadow">
                 <div className="flex items-start justify-between mb-4">
@@ -322,10 +339,10 @@ export default function ClienteDashboard() {
                   required
                   className="input"
                   value={formData.tipo_servicio}
-                  onChange={e => setFormData({ ...formData, tipo_servicio: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, tipo_servicio: e.target.value })}
                 >
                   <option value="">Seleccionar servicio</option>
-                  {SERVICIOS.map(s => (
+                  {SERVICIOS.map((s) => (
                     <option key={s.value} value={s.value}>
                       {s.icon} {s.label}
                     </option>
@@ -340,7 +357,7 @@ export default function ClienteDashboard() {
                   rows={3}
                   className="input"
                   value={formData.descripcion}
-                  onChange={e => setFormData({ ...formData, descripcion: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
                   placeholder="Detallá qué necesitás..."
                 />
               </div>
@@ -353,7 +370,7 @@ export default function ClienteDashboard() {
                     step="0.01"
                     className="input"
                     value={formData.hectareas}
-                    onChange={e => setFormData({ ...formData, hectareas: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, hectareas: e.target.value })}
                   />
                 </div>
                 <div>
@@ -363,7 +380,7 @@ export default function ClienteDashboard() {
                     step="0.01"
                     className="input"
                     value={formData.toneladas}
-                    onChange={e => setFormData({ ...formData, toneladas: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, toneladas: e.target.value })}
                   />
                 </div>
               </div>
@@ -375,7 +392,7 @@ export default function ClienteDashboard() {
                   required
                   className="input"
                   value={formData.fecha_necesaria}
-                  onChange={e => setFormData({ ...formData, fecha_necesaria: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, fecha_necesaria: e.target.value })}
                 />
               </div>
 
@@ -386,10 +403,10 @@ export default function ClienteDashboard() {
                     required
                     className="input"
                     value={formData.provincia}
-                    onChange={e => setFormData({ ...formData, provincia: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, provincia: e.target.value })}
                   >
                     <option value="">Seleccionar</option>
-                    {PROVINCIAS_ARGENTINA.map(p => (
+                    {PROVINCIAS_ARGENTINA.map((p) => (
                       <option key={p.nombre} value={p.nombre}>
                         {p.nombre}
                       </option>
@@ -403,7 +420,7 @@ export default function ClienteDashboard() {
                     required
                     className="input"
                     value={formData.localidad}
-                    onChange={e => setFormData({ ...formData, localidad: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, localidad: e.target.value })}
                   />
                 </div>
               </div>
@@ -416,12 +433,16 @@ export default function ClienteDashboard() {
                   className="input"
                   placeholder="$"
                   value={formData.presupuesto_estimado}
-                  onChange={e => setFormData({ ...formData, presupuesto_estimado: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, presupuesto_estimado: e.target.value })}
                 />
               </div>
 
               <div className="flex gap-3">
-                <button type="button" onClick={() => setShowModal(false)} className="btn-secondary flex-1">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="btn-secondary flex-1"
+                >
                   Cancelar
                 </button>
                 <button type="submit" disabled={loading} className="btn-primary flex-1">
