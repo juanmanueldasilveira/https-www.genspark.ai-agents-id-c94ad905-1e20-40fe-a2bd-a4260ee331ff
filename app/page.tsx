@@ -1,601 +1,617 @@
-'use client'
+'use client';
 
-import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase/client'
+import React, { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 type Oportunidad = {
-  id: string
-  tipo_servicio: string
-  descripcion: string
-  hectareas: number | null
-  toneladas: number | null
-  fecha_necesaria: string
-  provincia: string
-  localidad: string
-  presupuesto_estimado: number | null
-  created_at: string
-}
+  id: string;
+  tipo_servicio: string | null;
+  provincia: string | null;
+  localidad: string | null;
+  fecha_necesaria: string | null;
+  hectareas: number | null;
+  toneladas: number | null;
+  presupuesto: number | null;
+  descripcion: string | null;
+  estado: string | null;
+  created_at: string | null;
+};
 
 type RosarioItem = {
-  commodity: string
-  ars_per_tn: number | null
-  usd_per_tn: number | null
-}
+  producto: string;
+  pesos: string | null;
+  dolares: string | null;
+};
 
-type RosarioResponse = {
-  dateText: string | null
-  timeText: string | null
-  tcBnaComprador: number | null
-  items: RosarioItem[]
-  sourceUrl: string
-}
+type RosarioResp = {
+  ok: boolean;
+  dateText?: string;
+  timeText?: string;
+  tcBnaComprador?: string;
+  items?: RosarioItem[];
+  error?: string;
+};
 
-type DolarItem = {
-  casa: string
-  nombre: string
-  compra: number | null
-  venta: number | null
-  fechaActualizacion: string | null
-}
+type Divisa = {
+  nombre: string;
+  compra: number | null;
+  venta: number | null;
+  fechaActualizacion?: string;
+};
 
 type NoticiasItem = {
-  title: string
-  link: string
-  pubDate: string | null
-  source: string
+  title: string;
+  link: string;
+  pubDate?: string;
+  source?: string;
+};
+
+function truncate160(text: string) {
+  const t = text.trim();
+  if (t.length <= 160) return t;
+  return t.slice(0, 157).trimEnd() + '...';
 }
 
-const SERVICIOS = [
-  { value: 'pulverizacion', label: 'Pulverización', icon: '🚜' },
-  { value: 'siembra', label: 'Siembra', icon: '🌱' },
-  { value: 'cosecha', label: 'Cosecha', icon: '🌾' },
-  { value: 'flete', label: 'Flete', icon: '🚛' },
-] as const
-
-function truncate(s: string, max = 160) {
-  const t = (s || '').trim()
-  if (t.length <= max) return t
-  return t.slice(0, max - 1) + '…'
+function formatMoneyARS(value: number) {
+  try {
+    return new Intl.NumberFormat('es-AR', {
+      style: 'currency',
+      currency: 'ARS',
+      maximumFractionDigits: 0,
+    }).format(value);
+  } catch {
+    return `$ ${Math.round(value).toLocaleString('es-AR')}`;
+  }
 }
 
-function formatArs(n: number | null) {
-  if (n === null || Number.isNaN(n)) return '—'
-  return '$' + n.toLocaleString('es-AR')
+function formatDateShort(value?: string | null) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
 
-function formatUsd(n: number | null) {
-  if (n === null || Number.isNaN(n)) return '—'
-  return (
-    'US$ ' +
-    n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  )
-}
+export default function Home() {
+  const router = useRouter();
+  const supabase = useMemo(() => createClientComponentClient(), []);
 
-function formatNum(n: number | null) {
-  if (n === null || Number.isNaN(n)) return '—'
-  return n.toLocaleString('es-AR', { maximumFractionDigits: 2 })
-}
+  const [sessionReady, setSessionReady] = useState(false);
+  const [isLogged, setIsLogged] = useState(false);
 
-export default function HomePage() {
-  const router = useRouter()
+  const [loadingOpp, setLoadingOpp] = useState(true);
+  const [loadingRosario, setLoadingRosario] = useState(true);
+  const [loadingFx, setLoadingFx] = useState(true);
+  const [loadingNews, setLoadingNews] = useState(true);
 
-  const [authReady, setAuthReady] = useState(false)
-  const [isLogged, setIsLogged] = useState(false)
+  const [opp, setOpp] = useState<Oportunidad[]>([]);
+  const [rosario, setRosario] = useState<RosarioResp | null>(null);
+  const [fx, setFx] = useState<Divisa[]>([]);
+  const [news, setNews] = useState<NoticiasItem[]>([]);
 
-  const [loadingOpps, setLoadingOpps] = useState(true)
-  const [oportunidades, setOportunidades] = useState<Oportunidad[]>([])
-
-  const [loadingRosario, setLoadingRosario] = useState(true)
-  const [rosario, setRosario] = useState<RosarioResponse | null>(null)
-
-  const [loadingFx, setLoadingFx] = useState(true)
-  const [fx, setFx] = useState<DolarItem[]>([])
-
-  const [loadingNews, setLoadingNews] = useState(true)
-  const [news, setNews] = useState<NoticiasItem[]>([])
+  const [errOpp, setErrOpp] = useState<string | null>(null);
+  const [errRosario, setErrRosario] = useState<string | null>(null);
+  const [errFx, setErrFx] = useState<string | null>(null);
+  const [errNews, setErrNews] = useState<string | null>(null);
 
   useEffect(() => {
-    const boot = async () => {
-      const { data } = await supabase.auth.getUser()
-      setIsLogged(!!data?.user)
-      setAuthReady(true)
-    }
-    boot()
-  }, [])
+    let mounted = true;
+
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (!mounted) return;
+        setIsLogged(!!data.session);
+      } catch {
+        // Si falla, la Home igual funciona.
+      } finally {
+        if (mounted) setSessionReady(true);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [supabase]);
 
   useEffect(() => {
-    const load = async () => {
-      setLoadingOpps(true)
-      fetch('/api/public/oportunidades')
-        .then((r) => r.json())
-        .then((j) => setOportunidades(j?.data || []))
-        .catch(() => setOportunidades([]))
-        .finally(() => setLoadingOpps(false))
+    let mounted = true;
 
-      setLoadingRosario(true)
-      fetch('/api/public/rosario')
-        .then((r) => r.json())
-        .then((j) => setRosario(j?.data || null))
-        .catch(() => setRosario(null))
-        .finally(() => setLoadingRosario(false))
+    (async () => {
+      try {
+        setLoadingOpp(true);
+        setErrOpp(null);
+        const res = await fetch('/api/public/oportunidades', { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        if (!mounted) return;
+        setOpp(Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : []);
+      } catch (e: any) {
+        if (!mounted) return;
+        setErrOpp('No se pudieron cargar oportunidades.');
+      } finally {
+        if (mounted) setLoadingOpp(false);
+      }
+    })();
 
-      setLoadingFx(true)
-      fetch('/api/public/divisas')
-        .then((r) => r.json())
-        .then((j) => setFx(j?.data || []))
-        .catch(() => setFx([]))
-        .finally(() => setLoadingFx(false))
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
-      setLoadingNews(true)
-      fetch('/api/public/noticias')
-        .then((r) => r.json())
-        .then((j) => setNews(j?.data || []))
-        .catch(() => setNews([]))
-        .finally(() => setLoadingNews(false))
-    }
+  useEffect(() => {
+    let mounted = true;
 
-    load()
-  }, [])
+    (async () => {
+      try {
+        setLoadingRosario(true);
+        setErrRosario(null);
+        const res = await fetch('/api/public/rosario', { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        if (!mounted) return;
+        setRosario(json);
+      } catch (e: any) {
+        if (!mounted) return;
+        setErrRosario('No se pudieron cargar cotizaciones Rosario.');
+      } finally {
+        if (mounted) setLoadingRosario(false);
+      }
+    })();
 
-  const oportunidadesView = useMemo(() => {
-    return oportunidades.map((o) => ({
-      ...o,
-      servicio: SERVICIOS.find((s) => s.value === (o.tipo_servicio as any)),
-      desc160: truncate(o.descripcion, 160),
-    }))
-  }, [oportunidades])
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
-  const fxTickerText = useMemo(() => {
-    if (loadingFx) return 'Cargando divisas…'
-    if (!fx?.length) return 'No se pudieron cargar divisas.'
-    // mostramos venta principalmente
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      try {
+        setLoadingFx(true);
+        setErrFx(null);
+        const res = await fetch('/api/public/divisas', { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        if (!mounted) return;
+        setFx(Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : []);
+      } catch (e: any) {
+        if (!mounted) return;
+        setErrFx('No se pudieron cargar divisas.');
+      } finally {
+        if (mounted) setLoadingFx(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      try {
+        setLoadingNews(true);
+        setErrNews(null);
+        const res = await fetch('/api/public/noticias', { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        if (!mounted) return;
+        setNews(Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : []);
+      } catch (e: any) {
+        if (!mounted) return;
+        setErrNews('No se pudieron cargar noticias.');
+      } finally {
+        if (mounted) setLoadingNews(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const fxTicker = useMemo(() => {
+    if (!fx?.length) return 'Divisas: cargando…';
+    // Ejemplo: "USD Oficial 1020/1040 • USD Blue 1200/1230 • ..."
     return fx
-      .map((d) => `${d.nombre}: ${formatNum(d.venta)}`)
-      .join('   •   ')
-  }, [fx, loadingFx])
-
-  const newsTickerText = useMemo(() => {
-    if (loadingNews) return 'Cargando noticias…'
-    if (!news?.length) return 'No se pudieron cargar noticias.'
-    return news
       .slice(0, 10)
-      .map((n) => truncate(n.title, 80))
-      .join('   •   ')
-  }, [news, loadingNews])
+      .map((d) => {
+        const compra = d.compra == null ? '—' : d.compra.toLocaleString('es-AR');
+        const venta = d.venta == null ? '—' : d.venta.toLocaleString('es-AR');
+        return `${d.nombre} ${compra}/${venta}`;
+      })
+      .join('  •  ');
+  }, [fx]);
 
-  const goRegister = (tipo: 'cliente' | 'prestador') => {
-    router.push(`/auth/register?tipo=${tipo}`)
-  }
-
-  const goLogin = (redirectTo: string) => {
-    router.push(`/auth/login?redirect=${encodeURIComponent(redirectTo)}`)
-  }
-
-  const onVerOTomar = (o: Oportunidad) => {
-    // MVP: enviamos al flujo autenticado (prestador)
-    const redirect = `/dashboard/prestador`
-    if (!authReady || !isLogged) {
-      goLogin(redirect)
-      return
+  const handleVerTomar = (o: Oportunidad) => {
+    // Mantiene el “paso a paso”: si no hay sesión, login.
+    if (!isLogged) {
+      router.push('/auth/login?redirect=/');
+      return;
     }
-    router.push('/dashboard/prestador')
-  }
-
-  const oppCount = oportunidades.length
+    // Si está logueado, lo mandamos al dashboard (podés cambiar a /oportunidades/[id] cuando exista)
+    router.push('/dashboard/prestador');
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      {/* TICKERS (franja fina superior) */}
-      <div className="border-b bg-white">
-        <div className="mx-auto max-w-7xl px-4 py-2">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 items-center">
-            {/* FX ticker */}
-            <div className="ticker-wrap">
-              <div className="ticker-label">Divisas</div>
-              <div className="ticker-viewport">
-                <div className="ticker-move">
-                  <span className="ticker-item">{fxTickerText}</span>
-                  <span className="ticker-sep">   •   </span>
-                  <span className="ticker-item">{fxTickerText}</span>
+    <div className="relative min-h-screen text-slate-100">
+      {/* Background image + dark overlays */}
+      <div
+        className="pointer-events-none fixed inset-0 -z-20 bg-cover bg-center"
+        style={{ backgroundImage: "url('/hero-wheat.jpg')" }}
+      />
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-gradient-to-b from-slate-950/70 via-slate-950/85 to-slate-950" />
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,rgba(34,197,94,0.16),transparent_55%)]" />
+
+      {/* Top FX ticker (single, loop, more transparent) */}
+      <div className="sticky top-0 z-50 border-b border-white/10 bg-black/20 backdrop-blur-xl">
+        <div className="mx-auto max-w-7xl px-4">
+          <div className="flex h-9 items-center overflow-hidden">
+            <div className="mr-3 hidden shrink-0 items-center gap-2 text-[11px] text-white/80 sm:flex">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400/90" />
+              <span className="uppercase tracking-wider">Divisas</span>
+            </div>
+
+            <div className="relative w-full overflow-hidden">
+              <div className="ticker-mask">
+                {/* Duplicamos el contenido para loop continuo */}
+                <div className="ticker-track">
+                  <span className="ticker-item">{fxTicker}</span>
+                  <span className="ticker-sep">•</span>
+                  <span className="ticker-item">{fxTicker}</span>
+                  <span className="ticker-sep">•</span>
+                  <span className="ticker-item">{fxTicker}</span>
                 </div>
               </div>
             </div>
 
-            {/* News ticker */}
-            <div className="ticker-wrap">
-              <div className="ticker-label">Noticias</div>
-              <div className="ticker-viewport">
-                <div className="ticker-move ticker-move-slower">
-                  <span className="ticker-item">{newsTickerText}</span>
-                  <span className="ticker-sep">   •   </span>
-                  <span className="ticker-item">{newsTickerText}</span>
-                </div>
-              </div>
+            <div className="ml-3 hidden shrink-0 text-[11px] text-white/60 sm:block">
+              {loadingFx ? 'Actualizando…' : errFx ? 'Sin datos' : 'Loop'}
             </div>
           </div>
-
-          <style jsx global>{`
-            .ticker-wrap {
-              display: flex;
-              align-items: center;
-              gap: 10px;
-              min-height: 22px;
-            }
-            .ticker-label {
-              font-size: 11px;
-              font-weight: 700;
-              color: #0f172a; /* slate-900 */
-              padding: 2px 8px;
-              border-radius: 999px;
-              background: #f1f5f9; /* slate-100 */
-              border: 1px solid #e2e8f0; /* slate-200 */
-              white-space: nowrap;
-            }
-            .ticker-viewport {
-              position: relative;
-              overflow: hidden;
-              width: 100%;
-              border-radius: 999px;
-              border: 1px solid #e2e8f0;
-              background: #ffffff;
-              height: 22px;
-              display: flex;
-              align-items: center;
-            }
-            .ticker-move {
-              display: inline-flex;
-              align-items: center;
-              white-space: nowrap;
-              will-change: transform;
-              animation: tickerScroll 22s linear infinite;
-              padding-left: 100%;
-            }
-            .ticker-move-slower {
-              animation-duration: 30s;
-            }
-            .ticker-item {
-              font-size: 12px;
-              color: #334155; /* slate-700 */
-              padding: 0 10px;
-            }
-            .ticker-sep {
-              font-size: 12px;
-              color: #94a3b8; /* slate-400 */
-            }
-            @keyframes tickerScroll {
-              0% {
-                transform: translateX(0);
-              }
-              100% {
-                transform: translateX(-100%);
-              }
-            }
-            @media (prefers-reduced-motion: reduce) {
-              .ticker-move,
-              .ticker-move-slower {
-                animation: none;
-                padding-left: 0;
-              }
-            }
-          `}</style>
         </div>
       </div>
 
-      {/* HEADER */}
-      <header className="bg-white border-b">
-        <div className="mx-auto max-w-7xl px-4 py-5 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-2xl bg-emerald-600 text-white grid place-items-center font-bold">
-              A
+      {/* Header */}
+      <header className="mx-auto max-w-7xl px-4 pt-8">
+        <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="flex items-baseline gap-3">
+              <h1 className="text-2xl font-semibold tracking-tight">AgroConnect</h1>
+              <span className="rounded-full border border-white/15 bg-black/20 px-2 py-0.5 text-xs text-white/70">
+                Portal
+              </span>
             </div>
-            <div>
-              <div className="text-lg font-extrabold leading-tight">AgroConnect</div>
-              <div className="text-xs text-slate-600">
-                Portal público · {oppCount} oportunidades abiertas
-              </div>
-            </div>
+            <p className="mt-1 text-sm text-white/70">
+              Oportunidades al centro. Mercados y contexto al costado. Accedé a detalles registrándote.
+            </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            {isLogged ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <nav className="hidden items-center gap-4 text-sm text-white/70 md:flex">
+              <a className="hover:text-white" href="#oportunidades">Oportunidades</a>
+              <a className="hover:text-white" href="#mercados">Mercados</a>
+              <a className="hover:text-white" href="#noticias">Noticias</a>
+            </nav>
+
+            <div className="h-6 w-px bg-white/10 hidden md:block" />
+
+            {sessionReady && !isLogged ? (
               <>
-                <button
-                  onClick={() => router.push('/dashboard/cliente')}
-                  className="hidden sm:inline-flex px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                >
-                  Panel Productor
-                </button>
-                <button
-                  onClick={() => router.push('/dashboard/prestador')}
-                  className="px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-semibold"
-                >
-                  Ir al Panel
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => goLogin('/')}
-                  className="px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                <Link
+                  href="/auth/login"
+                  className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm text-white/90 hover:bg-white/10"
                 >
                   Ingresar
-                </button>
-                <button
-                  onClick={() => goRegister('cliente')}
-                  className="px-3 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800 font-semibold"
+                </Link>
+                <Link
+                  href="/auth/register"
+                  className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-emerald-950 hover:bg-emerald-400"
                 >
-                  Registrarme
-                </button>
+                  Registrarse
+                </Link>
               </>
+            ) : (
+              <Link
+                href="/dashboard"
+                className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-emerald-950 hover:bg-emerald-400"
+              >
+                Ir al Dashboard
+              </Link>
             )}
           </div>
         </div>
       </header>
 
-      {/* MAIN 3-COLUMN LAYOUT */}
-      <main className="mx-auto max-w-7xl px-4 py-8">
-        <div className="grid grid-cols-12 gap-6">
-          {/* LEFT SIDEBAR */}
-          <aside className="col-span-12 lg:col-span-3 space-y-6">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm text-slate-600">Mercado de granos</div>
-                  <div className="text-xl font-extrabold">Rosario</div>
-                  <div className="text-xs text-slate-500 mt-1">
-                    CAC/BCR · Precios Pizarra ($/Tn)
-                  </div>
+      {/* Body 3 columns */}
+      <main className="mx-auto max-w-7xl px-4 pb-16 pt-8">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+          {/* Left sidebar (glass - more transparency) */}
+          <aside id="mercados" className="lg:col-span-3">
+            <div className="space-y-6">
+              <div className="rounded-2xl border border-white/10 bg-white/7 p-4 backdrop-blur-2xl">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-white/90">Mercado de Granos</h2>
+                  <span className="text-[11px] text-white/60">Rosario</span>
                 </div>
-                <div className="h-10 w-10 rounded-2xl bg-emerald-50 border border-emerald-100 grid place-items-center">
-                  📈
+
+                <div className="mt-3">
+                  {loadingRosario ? (
+                    <p className="text-sm text-white/60">Cargando cotizaciones…</p>
+                  ) : errRosario ? (
+                    <p className="text-sm text-rose-200/90">{errRosario}</p>
+                  ) : (
+                    <>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-white/60">
+                        <span>{rosario?.dateText ?? ''}</span>
+                        <span className="text-white/30">•</span>
+                        <span>{rosario?.timeText ?? ''}</span>
+                        {rosario?.tcBnaComprador ? (
+                          <>
+                            <span className="text-white/30">•</span>
+                            <span>TC BNA: {rosario.tcBnaComprador}</span>
+                          </>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-3 overflow-hidden rounded-xl border border-white/10">
+                        <table className="w-full text-left text-sm">
+                          <thead className="bg-black/20 text-[11px] uppercase tracking-wider text-white/65">
+                            <tr>
+                              <th className="px-3 py-2">Producto</th>
+                              <th className="px-3 py-2">$/tn</th>
+                              <th className="px-3 py-2">US$/tn</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-white/10 bg-white/5">
+                            {(rosario?.items ?? []).slice(0, 8).map((it, idx) => (
+                              <tr key={`${it.producto}-${idx}`} className="hover:bg-white/8">
+                                <td className="px-3 py-2 text-white/85">{it.producto}</td>
+                                <td className="px-3 py-2 text-white/75">{it.pesos ?? '—'}</td>
+                                <td className="px-3 py-2 text-white/75">{it.dolares ?? '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="mt-3 text-[11px] text-white/55">
+                        Fuente: Precios de pizarra (CAC/BCR)
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
-              {loadingRosario ? (
-                <div className="text-slate-600 mt-4">Cargando…</div>
-              ) : !rosario ? (
-                <div className="text-slate-600 mt-4">No se pudo cargar Rosario.</div>
-              ) : (
-                <>
-                  <div className="text-xs text-slate-500 mt-3">
-                    {rosario.dateText ? `Fecha: ${rosario.dateText}` : ''}{' '}
-                    {rosario.timeText ? `· Hora: ${rosario.timeText}` : ''}{' '}
-                    {rosario.tcBnaComprador ? `· TC BNA: ${formatArs(rosario.tcBnaComprador)}` : ''}
-                  </div>
-
-                  <div className="mt-4 overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-slate-600">
-                          <th className="py-2">Prod.</th>
-                          <th className="py-2">$</th>
-                          <th className="py-2">US$</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rosario.items.map((it) => (
-                          <tr key={it.commodity} className="border-t">
-                            <td className="py-2 font-semibold">{it.commodity}</td>
-                            <td className="py-2">{formatArs(it.ars_per_tn)}</td>
-                            <td className="py-2">{formatUsd(it.usd_per_tn)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <a
-                    href={rosario.sourceUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-4 inline-flex text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline"
-                  >
-                    Ver fuente
-                  </a>
-                </>
-              )}
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="text-sm text-slate-600">Mercado de granos</div>
-              <div className="text-xl font-extrabold">Chicago (CME)</div>
-              <div className="text-xs text-slate-500 mt-1">
-                Delayed (≥ 10 min) + link oficial
+              <div className="rounded-2xl border border-white/10 bg-white/7 p-4 backdrop-blur-2xl">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-white/90">Chicago (CME)</h3>
+                  <span className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[11px] text-white/65">
+                    Delayed
+                  </span>
+                </div>
+                <p className="mt-2 text-sm text-white/70">
+                  Cotizaciones con demora (delayed). Para ver al momento, ingresá al sitio oficial.
+                </p>
+                <a
+                  href="https://www.cmegroup.com/market-data/browse-data/delayed-quotes.html"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/85 hover:bg-white/10"
+                >
+                  Ver en CME
+                </a>
+                <div className="mt-2 text-[11px] text-white/55">
+                  Fuente: CME Delayed Quotes
+                </div>
               </div>
-
-              <div className="mt-3 text-sm text-slate-700 leading-relaxed">
-                Mostramos delayed y dejamos el acceso al mercado en CME para ver al momento.
-              </div>
-
-              <a
-                href="https://www.cmegroup.com/market-data/browse-data/delayed-quotes.html"
-                target="_blank"
-                rel="noreferrer"
-                className="mt-4 inline-flex px-3 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800 font-semibold text-sm"
-              >
-                Abrir CME (Delayed Quotes)
-              </a>
             </div>
           </aside>
 
-          {/* CENTER (OPPORTUNITIES) */}
-          <section className="col-span-12 lg:col-span-6">
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-              <div className="p-6 border-b bg-gradient-to-r from-emerald-50 to-white">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h2 className="text-2xl font-extrabold">Oportunidades abiertas</h2>
-                    <p className="text-sm text-slate-600 mt-1">
-                      Vista pública: sin costo de créditos ni contacto. Para tomar, necesitás cuenta.
-                    </p>
-                  </div>
+          {/* Center column (focus) */}
+          <section id="oportunidades" className="lg:col-span-6">
+            <div className="rounded-2xl border border-white/10 bg-white/6 p-4 backdrop-blur-xl">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold tracking-tight">Oportunidades</h2>
+                  <p className="mt-1 text-sm text-white/70">
+                    Explorá el flujo de trabajos disponibles. Para ver detalles y tomar una oportunidad, iniciá sesión.
+                  </p>
+                </div>
 
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => goRegister('cliente')}
-                      className="hidden sm:inline-flex px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 font-semibold"
-                    >
-                      Publicar solicitud
-                    </button>
-                    <button
-                      onClick={() => goRegister('prestador')}
-                      className="px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-semibold"
-                    >
-                      Tomar trabajos
-                    </button>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <Link
+                    href="/auth/register"
+                    className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-emerald-950 hover:bg-emerald-400"
+                  >
+                    Publicar / Registrarme
+                  </Link>
                 </div>
               </div>
 
-              <div className="p-6">
-                {loadingOpps ? (
-                  <div className="text-slate-600">Cargando oportunidades…</div>
-                ) : oportunidadesView.length === 0 ? (
-                  <div className="text-slate-600">No hay oportunidades abiertas por ahora.</div>
+              <div className="mt-4 space-y-3">
+                {loadingOpp ? (
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-white/65">
+                    Cargando oportunidades…
+                  </div>
+                ) : errOpp ? (
+                  <div className="rounded-xl border border-rose-300/20 bg-rose-500/10 p-4 text-sm text-rose-100">
+                    {errOpp}
+                  </div>
+                ) : opp.length === 0 ? (
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-white/65">
+                    Todavía no hay oportunidades abiertas.
+                  </div>
                 ) : (
-                  <div className="space-y-4">
-                    {oportunidadesView.map((o) => (
-                      <div
-                        key={o.id}
-                        className="rounded-2xl border border-slate-200 bg-white hover:shadow-md transition overflow-hidden"
-                      >
-                        <div className="p-5">
-                          <div className="flex items-start justify-between gap-4">
-                            <div>
-                              <div className="text-lg font-extrabold">
-                                {o.servicio?.icon ?? '🧩'}{' '}
-                                {o.servicio?.label ?? o.tipo_servicio}
-                              </div>
-                              <div className="text-sm text-slate-600">
-                                {o.localidad}, {o.provincia}
-                              </div>
-                            </div>
-
-                            <div className="text-right">
-                              <div className="text-xs text-slate-500">Fecha necesaria</div>
-                              <div className="text-sm font-semibold">
-                                {o.fecha_necesaria
-                                  ? new Date(o.fecha_necesaria).toLocaleDateString('es-AR')
-                                  : '—'}
-                              </div>
-                            </div>
+                  opp.slice(0, 20).map((o) => (
+                    <div
+                      key={o.id}
+                      className="group rounded-2xl border border-white/10 bg-white/7 p-4 backdrop-blur-2xl transition hover:bg-white/10"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-medium text-emerald-200 ring-1 ring-emerald-400/20">
+                              {o.tipo_servicio ?? 'Servicio'}
+                            </span>
+                            <span className="text-xs text-white/60">
+                              {o.localidad ?? '—'}, {o.provincia ?? '—'}
+                            </span>
+                            {o.estado ? (
+                              <span className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[11px] text-white/65">
+                                {o.estado}
+                              </span>
+                            ) : null}
                           </div>
 
-                          <p className="mt-3 text-sm text-slate-700 leading-relaxed">
-                            {o.desc160}
-                          </p>
-
-                          <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-                            <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
-                              <div className="text-xs text-slate-500">Hectáreas</div>
-                              <div className="font-bold">{o.hectareas ?? '—'}</div>
-                            </div>
-                            <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
-                              <div className="text-xs text-slate-500">Toneladas</div>
-                              <div className="font-bold">{o.toneladas ?? '—'}</div>
-                            </div>
-                            <div className="col-span-2 rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
-                              <div className="text-xs text-slate-500">Presupuesto</div>
-                              <div className="font-bold">
-                                {o.presupuesto_estimado
-                                  ? '$' + o.presupuesto_estimado.toLocaleString('es-AR')
-                                  : '—'}
-                              </div>
-                            </div>
+                          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-white/75">
+                            {o.fecha_necesaria ? (
+                              <span>
+                                <span className="text-white/55">Fecha:</span> {formatDateShort(o.fecha_necesaria)}
+                              </span>
+                            ) : null}
+                            {o.hectareas != null ? (
+                              <span>
+                                <span className="text-white/55">Has:</span> {o.hectareas}
+                              </span>
+                            ) : null}
+                            {o.toneladas != null ? (
+                              <span>
+                                <span className="text-white/55">Tn:</span> {o.toneladas}
+                              </span>
+                            ) : null}
+                            {o.presupuesto != null ? (
+                              <span>
+                                <span className="text-white/55">Presupuesto:</span> {formatMoneyARS(o.presupuesto)}
+                              </span>
+                            ) : null}
                           </div>
 
-                          <div className="mt-4 flex gap-2">
-                            <button
-                              onClick={() => onVerOTomar(o)}
-                              className="flex-1 px-4 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800 font-semibold"
-                            >
-                              Ver / Tomar (requiere cuenta)
-                            </button>
-                            <button
-                              onClick={() => goRegister('cliente')}
-                              className="px-4 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 font-semibold"
-                            >
-                              Publicar
-                            </button>
-                          </div>
+                          {o.descripcion ? (
+                            <p className="mt-2 text-sm text-white/70">
+                              {truncate160(o.descripcion)}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-2">
+                          <button
+                            onClick={() => handleVerTomar(o)}
+                            className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-emerald-950 hover:bg-emerald-400"
+                          >
+                            Ver / Tomar
+                          </button>
                         </div>
                       </div>
-                    ))}
-                  </div>
+
+                      {!isLogged ? (
+                        <div className="mt-3 text-[11px] text-white/55">
+                          Para acceder a la oportunidad completa, necesitás iniciar sesión.
+                        </div>
+                      ) : null}
+                    </div>
+                  ))
                 )}
               </div>
             </div>
           </section>
 
-          {/* RIGHT SIDEBAR (NEWS LIST) */}
-          <aside className="col-span-12 lg:col-span-3 space-y-6">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm text-slate-600">Actualidad</div>
-                  <div className="text-xl font-extrabold">Noticias</div>
-                  <div className="text-xs text-slate-500 mt-1">Resumen y acceso a la nota</div>
-                </div>
-                <div className="h-10 w-10 rounded-2xl bg-slate-100 border border-slate-200 grid place-items-center">
-                  📰
-                </div>
+          {/* Right sidebar (glass - more transparency) */}
+          <aside id="noticias" className="lg:col-span-3">
+            <div className="rounded-2xl border border-white/10 bg-white/7 p-4 backdrop-blur-2xl">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-white/90">Noticias Agro</h2>
+                <span className="text-[11px] text-white/60">Resumen</span>
               </div>
 
-              {loadingNews ? (
-                <div className="text-slate-600 mt-4">Cargando…</div>
-              ) : news.length === 0 ? (
-                <div className="text-slate-600 mt-4">No se pudieron cargar noticias.</div>
-              ) : (
-                <div className="mt-4 space-y-3">
-                  {news.slice(0, 10).map((n) => (
+              <div className="mt-3 space-y-3">
+                {loadingNews ? (
+                  <p className="text-sm text-white/60">Cargando noticias…</p>
+                ) : errNews ? (
+                  <p className="text-sm text-rose-200/90">{errNews}</p>
+                ) : news.length === 0 ? (
+                  <p className="text-sm text-white/60">No hay noticias para mostrar.</p>
+                ) : (
+                  news.slice(0, 10).map((n, idx) => (
                     <a
-                      key={n.link}
+                      key={`${n.link}-${idx}`}
                       href={n.link}
                       target="_blank"
                       rel="noreferrer"
-                      className="block rounded-xl border border-slate-200 bg-slate-50 hover:bg-white hover:shadow-sm transition p-3"
-                      title={n.title}
+                      className="block rounded-xl border border-white/10 bg-black/20 p-3 hover:bg-white/8"
                     >
-                      <div className="font-semibold text-sm leading-snug">
-                        {truncate(n.title, 90)}
-                      </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        {n.pubDate ? new Date(n.pubDate).toLocaleString('es-AR') : ''}{' '}
-                        {n.source ? `· ${n.source}` : ''}
+                      <div className="text-sm font-medium text-white/85">{truncate160(n.title)}</div>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-white/55">
+                        {n.source ? <span>{n.source}</span> : null}
+                        {n.pubDate ? (
+                          <>
+                            <span className="text-white/30">•</span>
+                            <span>{formatDateShort(n.pubDate)}</span>
+                          </>
+                        ) : null}
                       </div>
                     </a>
-                  ))}
-                </div>
-              )}
-            </div>
+                  ))
+                )}
+              </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="text-sm text-slate-600">Accesos rápidos</div>
-              <div className="mt-3 flex flex-col gap-2">
-                <button
-                  onClick={() => goRegister('cliente')}
-                  className="px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 font-semibold"
-                >
-                  Publicar una solicitud
-                </button>
-                <button
-                  onClick={() => goRegister('prestador')}
-                  className="px-4 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800 font-semibold"
-                >
-                  Registrarme como prestador
-                </button>
-                <button
-                  onClick={() => goLogin('/')}
-                  className="px-4 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 font-semibold"
-                >
-                  Ingresar
-                </button>
+              <div className="mt-3 text-[11px] text-white/55">
+                Fuente: RSS (según endpoint público)
               </div>
             </div>
           </aside>
         </div>
       </main>
+
+      {/* Global styles for ticker loop */}
+      <style jsx global>{`
+        /* Mask to soften edges */
+        .ticker-mask {
+          mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+          -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+        }
+
+        .ticker-track {
+          display: inline-flex;
+          gap: 14px;
+          white-space: nowrap;
+          will-change: transform;
+          animation: marquee 22s linear infinite;
+          color: rgba(255, 255, 255, 0.85);
+          font-size: 12px;
+        }
+
+        .ticker-item {
+          opacity: 0.92;
+        }
+
+        .ticker-sep {
+          opacity: 0.4;
+        }
+
+        @keyframes marquee {
+          0% {
+            transform: translateX(0%);
+          }
+          100% {
+            transform: translateX(-33.333%);
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .ticker-track {
+            animation: none;
+          }
+        }
+
+        /* Tailwind doesn't include bg-white/7 by default; works because it's arbitrary via JIT
+           If your setup doesn't allow it, change bg-white/7 -> bg-white/10 everywhere. */
+      `}</style>
     </div>
-  )
+  );
 }
