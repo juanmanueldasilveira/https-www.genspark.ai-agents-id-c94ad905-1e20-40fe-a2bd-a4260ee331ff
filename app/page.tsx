@@ -242,20 +242,17 @@ export default function Home() {
   };
 
   return (
-    <div className="relative min-h-screen text-slate-100">
+    <div
+      className="relative min-h-screen text-slate-100"
+      style={{ backgroundColor: '#1a3a24' }}
+    >
 
-      {/* ── Fondo: foto de trigo ── */}
-      <div
-        className="pointer-events-none fixed inset-0 -z-20 bg-cover bg-center brightness-110 saturate-105"
-        style={{ backgroundImage: "url('/hero-wheat.jpg')" }}
-      />
-      {/* ── Overlay 30% ── */}
-      <div className="pointer-events-none fixed inset-0 -z-10 bg-gradient-to-b from-slate-950/20 via-slate-950/40 to-slate-950/75" />
-      {/* ── Glow verde sutil ── */}
-      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,rgba(34,197,94,0.12),transparent_55%)]" />
+      {/* ── Fondo: color sólido verde medio + glow sutil ── */}
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_80%_50%_at_50%_0%,rgba(34,197,94,0.18),transparent_70%)]" />
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_60%_40%_at_80%_100%,rgba(16,163,74,0.10),transparent_70%)]" />
 
       {/* ── Ticker divisas ── */}
-      <div className="sticky top-0 z-50 border-b border-white/10 bg-black/15 backdrop-blur-2xl">
+      <div className="sticky top-0 z-50 border-b border-white/10 bg-black/20 backdrop-blur-2xl">
         <div className="mx-auto max-w-7xl px-4">
           <div className="flex h-9 items-center overflow-hidden">
             <div className="mr-3 hidden shrink-0 items-center gap-2 text-[11px] text-white/75 sm:flex">
@@ -282,9 +279,9 @@ export default function Home() {
 
       {/* ── Header ── */}
       <header className="mx-auto max-w-7xl px-4 pt-8">
-        <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-2xl md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/8 p-5 backdrop-blur-2xl md:flex-row md:items-center md:justify-between">
           <div>
-            {/* ── Logo SVG inline — sin imagen externa, fondo transparente ── */}
+            {/* ── Logo SVG inline ── */}
             <div className="flex items-center gap-3">
               <svg
                 width="36"
@@ -294,44 +291,18 @@ export default function Home() {
                 xmlns="http://www.w3.org/2000/svg"
                 aria-hidden="true"
               >
-                {/* Tallo */}
-                <path
-                  d="M16 28 L16 14"
-                  stroke="#16a34a"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                />
-                {/* Hoja izquierda */}
-                <path
-                  d="M16 14 C16 8 10 4 4 5 C5 11 9 15 16 14Z"
-                  fill="#16a34a"
-                  opacity="0.9"
-                />
-                {/* Hoja derecha */}
-                <path
-                  d="M16 18 C16 12 22 8 28 9 C27 15 23 19 16 18Z"
-                  fill="#22c55e"
-                  opacity="0.85"
-                />
-                {/* Detalle raíz */}
-                <path
-                  d="M16 24 C14 22 11 21 8 22"
-                  stroke="#16a34a"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  opacity="0.55"
-                />
+                <path d="M16 28 L16 14" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round"/>
+                <path d="M16 14 C16 8 10 4 4 5 C5 11 9 15 16 14Z" fill="#16a34a" opacity="0.9"/>
+                <path d="M16 18 C16 12 22 8 28 9 C27 15 23 19 16 18Z" fill="#22c55e" opacity="0.85"/>
+                <path d="M16 24 C14 22 11 21 8 22" stroke="#16a34a" strokeWidth="1.5" strokeLinecap="round" opacity="0.55"/>
               </svg>
-              {/* Wordmark */}
               <span className="text-2xl font-bold text-white tracking-tight leading-none">
                 Agro<span className="font-light text-emerald-300">Connect</span>
               </span>
-              {/* Badge */}
               <span className="rounded-full border border-white/15 bg-black/20 px-2 py-0.5 text-xs text-white/60">
                 Portal
               </span>
             </div>
-
             <p className="mt-3 text-sm text-white/70">
               Oportunidades al centro. Mercados y contexto al costado. Accedé a detalles registrándote.
             </p>
@@ -380,7 +351,7 @@ export default function Home() {
             <div className="space-y-6">
 
               {/* Mercado de Granos - Rosario */}
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-2xl">
+              <div className="rounded-2xl border border-white/10 bg-white/8 p-4 backdrop-blur-2xl">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-semibold text-white/90">Mercado de Granos</h2>
                   <span className="text-[11px] text-white/60">Rosario</span>
@@ -440,7 +411,7 @@ export default function Home() {
               </div>
 
               {/* Chicago CME */}
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-2xl">
+              <div className="rounded-2xl border border-white/10 bg-white/8 p-4 backdrop-blur-2xl">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-white/90">Chicago (CME)</h3>
                   <span className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[11px] text-white/65">
@@ -466,7 +437,7 @@ export default function Home() {
 
           {/* Columna central */}
           <section id="oportunidades" className="lg:col-span-6">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-2xl">
+            <div className="rounded-2xl border border-white/10 bg-white/8 p-4 backdrop-blur-2xl">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <h2 className="text-lg font-semibold tracking-tight">Oportunidades</h2>
@@ -499,12 +470,12 @@ export default function Home() {
                   opp.slice(0, 20).map((o) => (
                     <div
                       key={o.id}
-                      className="group rounded-2xl border border-white/10 bg-white/6 p-4 backdrop-blur-2xl transition hover:bg-white/10"
+                      className="group rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-2xl transition hover:bg-white/10"
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-medium text-emerald-200 ring-1 ring-emerald-400/20">
+                            <span className="rounded-full bg-emerald-500/20 px-2.5 py-1 text-xs font-medium text-emerald-200 ring-1 ring-emerald-400/25">
                               {o.tipo_servicio ?? 'Servicio'}
                             </span>
                             <span className="text-xs text-white/60">
@@ -555,7 +526,7 @@ export default function Home() {
 
           {/* Columna derecha */}
           <aside id="noticias" className="lg:col-span-3">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-2xl">
+            <div className="rounded-2xl border border-white/10 bg-white/8 p-4 backdrop-blur-2xl">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-white/90">Noticias Agro</h2>
                 <span className="text-[11px] text-white/60">Resumen</span>
