@@ -249,7 +249,7 @@ export default function Home() {
         className="pointer-events-none fixed inset-0 -z-20 bg-cover bg-center brightness-110 saturate-105"
         style={{ backgroundImage: "url('/hero-wheat.jpg')" }}
       />
-      {/* ── Overlay 30% (permite ver bien la foto) ── */}
+      {/* ── Overlay 30% ── */}
       <div className="pointer-events-none fixed inset-0 -z-10 bg-gradient-to-b from-slate-950/20 via-slate-950/40 to-slate-950/75" />
       {/* ── Glow verde sutil ── */}
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,rgba(34,197,94,0.12),transparent_55%)]" />
@@ -284,29 +284,54 @@ export default function Home() {
       <header className="mx-auto max-w-7xl px-4 pt-8">
         <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-2xl md:flex-row md:items-center md:justify-between">
           <div>
+            {/* ── Logo SVG inline — sin imagen externa, fondo transparente ── */}
             <div className="flex items-center gap-3">
-              {/* Logo con chip blanco para que el logo Light sea legible sobre fondo oscuro */}
-              <div className="rounded-xl bg-white/90 px-3 py-2 shadow-sm backdrop-blur-md ring-1 ring-white/30">
-                <img
-                  src="/brand/agroconnect-logo.png"
-                  alt="AgroConnect"
-                  className="h-8 w-auto"
-                  onError={(e) => {
-                    const target = e.currentTarget;
-                    target.style.display = 'none';
-                    const fallback = document.getElementById('logo-fallback');
-                    if (fallback) fallback.style.display = 'flex';
-                  }}
+              <svg
+                width="36"
+                height="36"
+                viewBox="0 0 32 32"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+              >
+                {/* Tallo */}
+                <path
+                  d="M16 28 L16 14"
+                  stroke="#16a34a"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
                 />
-                <div id="logo-fallback" className="hidden items-baseline gap-1">
-                  <span className="text-xl font-bold text-slate-900">Agro</span>
-                  <span className="text-xl font-light text-slate-500">Connect</span>
-                </div>
-              </div>
-              <span className="rounded-full border border-white/15 bg-black/20 px-2 py-0.5 text-xs text-white/70">
+                {/* Hoja izquierda */}
+                <path
+                  d="M16 14 C16 8 10 4 4 5 C5 11 9 15 16 14Z"
+                  fill="#16a34a"
+                  opacity="0.9"
+                />
+                {/* Hoja derecha */}
+                <path
+                  d="M16 18 C16 12 22 8 28 9 C27 15 23 19 16 18Z"
+                  fill="#22c55e"
+                  opacity="0.85"
+                />
+                {/* Detalle raíz */}
+                <path
+                  d="M16 24 C14 22 11 21 8 22"
+                  stroke="#16a34a"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  opacity="0.55"
+                />
+              </svg>
+              {/* Wordmark */}
+              <span className="text-2xl font-bold text-white tracking-tight leading-none">
+                Agro<span className="font-light text-emerald-300">Connect</span>
+              </span>
+              {/* Badge */}
+              <span className="rounded-full border border-white/15 bg-black/20 px-2 py-0.5 text-xs text-white/60">
                 Portal
               </span>
             </div>
+
             <p className="mt-3 text-sm text-white/70">
               Oportunidades al centro. Mercados y contexto al costado. Accedé a detalles registrándote.
             </p>
