@@ -76,14 +76,10 @@ function formatDateShort(value?: string | null) {
 export default function Home() {
   const router = useRouter();
 
-  // ✅ Opción B: Supabase desde @supabase/supabase-js usando env vars públicas
   const supabase = useMemo<SupabaseClient | null>(() => {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-    // Evita crash si faltan envs (la Home igual puede renderizar)
     if (!url || !key) return null;
-
     return createClient(url, key, {
       auth: {
         persistSession: true,
@@ -111,49 +107,35 @@ export default function Home() {
   const [errFx, setErrFx] = useState<string | null>(null);
   const [errNews, setErrNews] = useState<string | null>(null);
 
-  // Sesión (sin auth-helpers)
+  // Sesión
   useEffect(() => {
     let mounted = true;
-
     (async () => {
       try {
         if (!supabase) {
-          if (mounted) {
-            setIsLogged(false);
-            setSessionReady(true);
-          }
+          if (mounted) { setIsLogged(false); setSessionReady(true); }
           return;
         }
-
         const { data } = await supabase.auth.getSession();
         if (!mounted) return;
-
         setIsLogged(!!data.session);
         setSessionReady(true);
-
-        // Escuchar cambios de auth (login/logout) y reflejar UI
         const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
           setIsLogged(!!session);
         });
-
-        return () => {
-          sub?.subscription?.unsubscribe();
-        };
+        return () => { sub?.subscription?.unsubscribe(); };
       } catch {
         if (!mounted) return;
         setIsLogged(false);
         setSessionReady(true);
       }
     })();
-
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [supabase]);
 
+  // Oportunidades
   useEffect(() => {
     let mounted = true;
-
     (async () => {
       try {
         setLoadingOpp(true);
@@ -170,15 +152,12 @@ export default function Home() {
         if (mounted) setLoadingOpp(false);
       }
     })();
-
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
+  // Rosario
   useEffect(() => {
     let mounted = true;
-
     (async () => {
       try {
         setLoadingRosario(true);
@@ -195,15 +174,12 @@ export default function Home() {
         if (mounted) setLoadingRosario(false);
       }
     })();
-
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
+  // Divisas
   useEffect(() => {
     let mounted = true;
-
     (async () => {
       try {
         setLoadingFx(true);
@@ -220,15 +196,12 @@ export default function Home() {
         if (mounted) setLoadingFx(false);
       }
     })();
-
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
+  // Noticias
   useEffect(() => {
     let mounted = true;
-
     (async () => {
       try {
         setLoadingNews(true);
@@ -245,10 +218,7 @@ export default function Home() {
         if (mounted) setLoadingNews(false);
       }
     })();
-
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
   const fxTicker = useMemo(() => {
@@ -273,15 +243,18 @@ export default function Home() {
 
   return (
     <div className="relative min-h-screen text-slate-100">
-      {/* Background image + dark overlays */}
+
+      {/* ── Fondo: foto de trigo ── */}
       <div
-        className="pointer-events-none fixed inset-0 -z-20 bg-cover bg-center"
+        className="pointer-events-none fixed inset-0 -z-20 bg-cover bg-center brightness-110 saturate-105"
         style={{ backgroundImage: "url('/hero-wheat.jpg')" }}
       />
-      <div className="pointer-events-none fixed inset-0 -z-10 bg-gradient-to-b from-slate-950/70 via-slate-950/85 to-slate-950" />
-      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,rgba(34,197,94,0.16),transparent_55%)]" />
+      {/* ── Overlay 30% (permite ver bien la foto) ── */}
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-gradient-to-b from-slate-950/20 via-slate-950/40 to-slate-950/75" />
+      {/* ── Glow verde sutil ── */}
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,rgba(34,197,94,0.12),transparent_55%)]" />
 
-      {/* Top FX ticker (single, loop, more transparent) */}
+      {/* ── Ticker divisas ── */}
       <div className="sticky top-0 z-50 border-b border-white/10 bg-black/15 backdrop-blur-2xl">
         <div className="mx-auto max-w-7xl px-4">
           <div className="flex h-9 items-center overflow-hidden">
@@ -289,7 +262,6 @@ export default function Home() {
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400/90" />
               <span className="uppercase tracking-wider">Divisas</span>
             </div>
-
             <div className="relative w-full overflow-hidden">
               <div className="ticker-mask">
                 <div className="ticker-track">
@@ -301,7 +273,6 @@ export default function Home() {
                 </div>
               </div>
             </div>
-
             <div className="ml-3 hidden shrink-0 text-[11px] text-white/55 sm:block">
               {loadingFx ? 'Actualizando…' : errFx ? 'Sin datos' : 'Loop'}
             </div>
@@ -309,74 +280,86 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Header */}
+      {/* ── Header ── */}
       <header className="mx-auto max-w-7xl px-4 pt-8">
         <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-2xl md:flex-row md:items-center md:justify-between">
           <div>
-            <div className="flex items-baseline gap-3">
-              <h1 className="text-2xl font-semibold tracking-tight">AgroConnect</h1>
+            <div className="flex items-center gap-3">
+              {/* Logo con chip blanco para que el logo Light sea legible sobre fondo oscuro */}
+              <div className="rounded-xl bg-white/90 px-3 py-2 shadow-sm backdrop-blur-md ring-1 ring-white/30">
+                <img
+                  src="/brand/agroconnect-logo.png"
+                  alt="AgroConnect"
+                  className="h-8 w-auto"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    target.style.display = 'none';
+                    const fallback = document.getElementById('logo-fallback');
+                    if (fallback) fallback.style.display = 'flex';
+                  }}
+                />
+                <div id="logo-fallback" className="hidden items-baseline gap-1">
+                  <span className="text-xl font-bold text-slate-900">Agro</span>
+                  <span className="text-xl font-light text-slate-500">Connect</span>
+                </div>
+              </div>
               <span className="rounded-full border border-white/15 bg-black/20 px-2 py-0.5 text-xs text-white/70">
                 Portal
               </span>
             </div>
-            <p className="mt-1 text-sm text-white/70">
+            <p className="mt-3 text-sm text-white/70">
               Oportunidades al centro. Mercados y contexto al costado. Accedé a detalles registrándote.
             </p>
-            {!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? (
-              <p className="mt-2 text-[11px] text-amber-200/90">
-                Falta configurar NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY (la Home igual carga datos públicos).
-              </p>
-            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <nav className="hidden items-center gap-4 text-sm text-white/70 md:flex">
-              <a className="hover:text-white" href="#oportunidades">Oportunidades</a>
-              <a className="hover:text-white" href="#mercados">Mercados</a>
-              <a className="hover:text-white" href="#noticias">Noticias</a>
+              <a className="hover:text-white transition-colors" href="#oportunidades">Oportunidades</a>
+              <a className="hover:text-white transition-colors" href="#mercados">Mercados</a>
+              <a className="hover:text-white transition-colors" href="#noticias">Noticias</a>
             </nav>
-
             <div className="hidden h-6 w-px bg-white/10 md:block" />
-
             {sessionReady && !isLogged ? (
               <>
                 <Link
                   href="/auth/login"
-                  className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm text-white/90 hover:bg-white/10"
+                  className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm text-white/90 transition hover:bg-white/10"
                 >
                   Ingresar
                 </Link>
                 <Link
                   href="/auth/register"
-                  className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-emerald-950 hover:bg-emerald-400"
+                  className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-emerald-950 transition hover:bg-emerald-400"
                 >
                   Registrarse
                 </Link>
               </>
-            ) : (
+            ) : sessionReady && isLogged ? (
               <Link
                 href="/dashboard"
-                className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-emerald-950 hover:bg-emerald-400"
+                className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-emerald-950 transition hover:bg-emerald-400"
               >
                 Ir al Dashboard
               </Link>
-            )}
+            ) : null}
           </div>
         </div>
       </header>
 
-      {/* Body 3 columns */}
+      {/* ── Body 3 columnas ── */}
       <main className="mx-auto max-w-7xl px-4 pb-16 pt-8">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          {/* Left sidebar (more transparent glass) */}
+
+          {/* Columna izquierda */}
           <aside id="mercados" className="lg:col-span-3">
             <div className="space-y-6">
+
+              {/* Mercado de Granos - Rosario */}
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-2xl">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-semibold text-white/90">Mercado de Granos</h2>
                   <span className="text-[11px] text-white/60">Rosario</span>
                 </div>
-
                 <div className="mt-3">
                   {loadingRosario ? (
                     <p className="text-sm text-white/60">Cargando cotizaciones…</p>
@@ -386,7 +369,7 @@ export default function Home() {
                     <>
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-white/60">
                         <span>{rosario?.dateText ?? ''}</span>
-                        <span className="text-white/30">•</span>
+                        {rosario?.dateText ? <span className="text-white/30">•</span> : null}
                         <span>{rosario?.timeText ?? ''}</span>
                         {rosario?.tcBnaComprador ? (
                           <>
@@ -395,7 +378,6 @@ export default function Home() {
                           </>
                         ) : null}
                       </div>
-
                       <div className="mt-3 overflow-hidden rounded-xl border border-white/10">
                         <table className="w-full text-left text-sm">
                           <thead className="bg-black/20 text-[11px] uppercase tracking-wider text-white/65">
@@ -407,7 +389,7 @@ export default function Home() {
                           </thead>
                           <tbody className="divide-y divide-white/10 bg-white/5">
                             {(rosario?.items ?? []).slice(0, 8).map((it, idx) => (
-                              <tr key={`${it.producto}-${idx}`} className="hover:bg-white/8">
+                              <tr key={`${it.producto}-${idx}`} className="hover:bg-white/8 transition-colors">
                                 <td className="px-3 py-2 text-white/85">{it.producto}</td>
                                 <td className="px-3 py-2 text-white/75">{it.pesos ?? '—'}</td>
                                 <td className="px-3 py-2 text-white/75">{it.dolares ?? '—'}</td>
@@ -416,15 +398,23 @@ export default function Home() {
                           </tbody>
                         </table>
                       </div>
-
                       <div className="mt-3 text-[11px] text-white/55">
-                        Fuente: Precios de pizarra (CAC/BCR)
+                        Fuente:{' '}
+                        <a
+                          href="http://www.cac.bcr.com.ar/es/precios-de-pizarra"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline hover:text-white/80"
+                        >
+                          Precios de pizarra (CAC/BCR)
+                        </a>
                       </div>
                     </>
                   )}
                 </div>
               </div>
 
+              {/* Chicago CME */}
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-2xl">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-white/90">Chicago (CME)</h3>
@@ -439,34 +429,32 @@ export default function Home() {
                   href="https://www.cmegroup.com/market-data/browse-data/delayed-quotes.html"
                   target="_blank"
                   rel="noreferrer"
-                  className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/85 hover:bg-white/10"
+                  className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/85 transition hover:bg-white/10"
                 >
-                  Ver en CME
+                  Ver en CME →
                 </a>
                 <div className="mt-2 text-[11px] text-white/55">Fuente: CME Delayed Quotes</div>
               </div>
+
             </div>
           </aside>
 
-          {/* Center column */}
+          {/* Columna central */}
           <section id="oportunidades" className="lg:col-span-6">
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-2xl">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <h2 className="text-lg font-semibold tracking-tight">Oportunidades</h2>
                   <p className="mt-1 text-sm text-white/70">
-                    Explorá el flujo de trabajos disponibles. Para ver detalles y tomar una oportunidad, iniciá sesión.
+                    Explorá trabajos disponibles. Iniciá sesión para ver detalles y tomar oportunidades.
                   </p>
                 </div>
-
-                <div className="flex items-center gap-2">
-                  <Link
-                    href="/auth/register"
-                    className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-emerald-950 hover:bg-emerald-400"
-                  >
-                    Publicar / Registrarme
-                  </Link>
-                </div>
+                <Link
+                  href="/auth/register"
+                  className="shrink-0 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-emerald-950 transition hover:bg-emerald-400"
+                >
+                  Publicar / Registrarme
+                </Link>
               </div>
 
               <div className="mt-4 space-y-3">
@@ -503,49 +491,35 @@ export default function Home() {
                               </span>
                             ) : null}
                           </div>
-
                           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-white/75">
                             {o.fecha_necesaria ? (
-                              <span>
-                                <span className="text-white/55">Fecha:</span> {formatDateShort(o.fecha_necesaria)}
-                              </span>
+                              <span><span className="text-white/55">Fecha:</span> {formatDateShort(o.fecha_necesaria)}</span>
                             ) : null}
                             {o.hectareas != null ? (
-                              <span>
-                                <span className="text-white/55">Has:</span> {o.hectareas}
-                              </span>
+                              <span><span className="text-white/55">Has:</span> {o.hectareas}</span>
                             ) : null}
                             {o.toneladas != null ? (
-                              <span>
-                                <span className="text-white/55">Tn:</span> {o.toneladas}
-                              </span>
+                              <span><span className="text-white/55">Tn:</span> {o.toneladas}</span>
                             ) : null}
                             {o.presupuesto != null ? (
-                              <span>
-                                <span className="text-white/55">Presupuesto:</span> {formatMoneyARS(o.presupuesto)}
-                              </span>
+                              <span><span className="text-white/55">Presupuesto:</span> {formatMoneyARS(o.presupuesto)}</span>
                             ) : null}
                           </div>
-
                           {o.descripcion ? (
                             <p className="mt-2 text-sm text-white/70">{truncate160(o.descripcion)}</p>
                           ) : null}
                         </div>
-
-                        <div className="flex shrink-0 items-center gap-2">
-                          <button
-                            onClick={() => handleVerTomar(o)}
-                            className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-emerald-950 hover:bg-emerald-400"
-                          >
-                            Ver / Tomar
-                          </button>
-                        </div>
+                        <button
+                          onClick={() => handleVerTomar(o)}
+                          className="shrink-0 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-emerald-950 transition hover:bg-emerald-400"
+                        >
+                          Ver / Tomar
+                        </button>
                       </div>
-
                       {!isLogged ? (
-                        <div className="mt-3 text-[11px] text-white/55">
-                          Para acceder a la oportunidad completa, necesitás iniciar sesión.
-                        </div>
+                        <p className="mt-3 text-[11px] text-white/50">
+                          🔒 Iniciá sesión para acceder a la oportunidad completa.
+                        </p>
                       ) : null}
                     </div>
                   ))
@@ -554,14 +528,13 @@ export default function Home() {
             </div>
           </section>
 
-          {/* Right sidebar */}
+          {/* Columna derecha */}
           <aside id="noticias" className="lg:col-span-3">
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-2xl">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-white/90">Noticias Agro</h2>
                 <span className="text-[11px] text-white/60">Resumen</span>
               </div>
-
               <div className="mt-3 space-y-3">
                 {loadingNews ? (
                   <p className="text-sm text-white/60">Cargando noticias…</p>
@@ -576,9 +549,11 @@ export default function Home() {
                       href={n.link}
                       target="_blank"
                       rel="noreferrer"
-                      className="block rounded-xl border border-white/10 bg-black/20 p-3 hover:bg-white/8"
+                      className="block rounded-xl border border-white/10 bg-black/20 p-3 transition hover:bg-white/8"
                     >
-                      <div className="text-sm font-medium text-white/85">{truncate160(n.title)}</div>
+                      <div className="text-sm font-medium leading-snug text-white/85">
+                        {truncate160(n.title)}
+                      </div>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-white/55">
                         {n.source ? <span>{n.source}</span> : null}
                         {n.pubDate ? (
@@ -592,20 +567,21 @@ export default function Home() {
                   ))
                 )}
               </div>
-
-              <div className="mt-3 text-[11px] text-white/55">Fuente: RSS (según endpoint público)</div>
+              <div className="mt-3 text-[11px] text-white/55">
+                Fuente: RSS agro
+              </div>
             </div>
           </aside>
+
         </div>
       </main>
 
-      {/* Global styles for ticker loop */}
+      {/* ── CSS Ticker loop ── */}
       <style jsx global>{`
         .ticker-mask {
           mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
           -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
         }
-
         .ticker-track {
           display: inline-flex;
           gap: 14px;
@@ -615,30 +591,17 @@ export default function Home() {
           color: rgba(255, 255, 255, 0.88);
           font-size: 12px;
         }
-
-        .ticker-item {
-          opacity: 0.95;
-        }
-
-        .ticker-sep {
-          opacity: 0.35;
-        }
-
+        .ticker-item { opacity: 0.95; }
+        .ticker-sep  { opacity: 0.35; }
         @keyframes marquee {
-          0% {
-            transform: translateX(0%);
-          }
-          100% {
-            transform: translateX(-33.333%);
-          }
+          0%   { transform: translateX(0%);       }
+          100% { transform: translateX(-33.333%); }
         }
-
         @media (prefers-reduced-motion: reduce) {
-          .ticker-track {
-            animation: none;
-          }
+          .ticker-track { animation: none; }
         }
       `}</style>
+
     </div>
   );
 }
